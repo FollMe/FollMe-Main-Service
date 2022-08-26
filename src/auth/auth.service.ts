@@ -35,4 +35,31 @@ export class AuthService {
         
         return user;
     }
+
+    async findOrCreateGGAccount(profile: any) {
+        const { email, name, picture } = profile;
+        const avatar = { link: picture };
+        var user = await this.userModel.findOne({ email }).exec();
+
+        if (!user) {
+            user = new this.userModel({ email, name, avatar, slEmail: email.substring(0, email.indexOf('@')) });
+            await user.save();
+        } else {
+            // Update information for user if current user do not has
+            var isUpdate = false;
+            if (!user.name) {
+                user.name = name;
+                isUpdate = true;
+            }
+            if (!user.avatar?.link) {
+                user.avatar = avatar;
+                isUpdate = true;
+            }
+            if (isUpdate) {
+                await user.save();
+            }
+        }
+
+        return user;
+    }
 }

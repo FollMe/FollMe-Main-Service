@@ -10,7 +10,7 @@ export class User  {
     password: string; 
     bio: string;
     block: boolean;
-    avatar: object;
+    avatar: { link?: string, public_id?: string };
     info: Array<object>;
     slug: string;
 }

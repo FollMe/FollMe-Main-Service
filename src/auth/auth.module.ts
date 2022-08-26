@@ -5,11 +5,12 @@ import { JwtModule } from '@nestjs/jwt';
 import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
 import { FacebookStrategy } from './strategies/facebook.strategy';
+import { GoogleStrategy } from './strategies/google.strategy';
 import { User, UserSchema } from './schemas/user.schema';
 
 @Module({
     controllers: [AuthController],
-    providers: [AuthService, FacebookStrategy],
+    providers: [AuthService, FacebookStrategy, GoogleStrategy],
     exports: [AuthService],
     imports: [
         ConfigModule.forRoot(),
