@@ -2,13 +2,24 @@ import { Injectable } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import FB from 'fb';
+import * as bcrypt from 'bcrypt'
 import { User, UserDocument } from './schemas/user.schema';
 
 @Injectable()
 export class AuthService {
     constructor(@InjectModel(User.name) private userModel: Model<UserDocument>) { }
-    getHello(): string {
-        return 'Oauth with Facebook';
+
+    async checkCredential(email: string, password: string) {
+        const user = await this.userModel.findOne({ email }).exec();
+
+        if (!user || !user.password) {
+            return null;
+        }
+
+        if (!bcrypt.compareSync(password, user.password)) {
+            return null;
+        }
+        return user;
     }
 
     async getUserFBInfo(fbAccessToken: string) {

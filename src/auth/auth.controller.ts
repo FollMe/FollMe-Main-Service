@@ -37,4 +37,18 @@ export class AuthController {
             user: req.user
         }
     }
+
+    @Post('local')
+    @UseGuards(AuthGuard("local"))
+    async localLogin(@Request() req): Promise<any> {
+        const payload = {
+            iss: "FollMe",
+            sub: req.user._id,
+        }
+        const token = this.jwtService.sign(payload);
+        return {
+            token,
+            user: req.user
+        }
+    }
 }
