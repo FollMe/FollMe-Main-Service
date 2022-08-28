@@ -10,6 +10,7 @@ import { FacebookStrategy } from './strategies/facebook.strategy';
 import { MailerService } from 'src/sharedServices/mailer.service';
 import { GoogleStrategy } from './strategies/google.strategy';
 import { LocalStrategy } from './strategies/local.strategy';
+import { JwtStrategy } from './strategies/jwt.strategy';
 import { User, UserSchema } from './schemas/user.schema';
 import { CertifyCode, CertifyCodeSchema } from './schemas/certifyCode.schema';
 
@@ -22,7 +23,8 @@ import { CertifyCode, CertifyCodeSchema } from './schemas/certifyCode.schema';
         UserService,
         FacebookStrategy,
         GoogleStrategy,
-        LocalStrategy
+        LocalStrategy,
+        JwtStrategy
     ],
     exports: [AuthService, CertifyCodeService, MailerService],
     imports: [
