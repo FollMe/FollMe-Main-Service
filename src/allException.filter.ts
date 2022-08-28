@@ -30,10 +30,21 @@ export class AllExceptionsFilter implements ExceptionFilter {
         const responseBody = {
             meta: {
                 ok: false,
-                message: httpStatus !== HttpStatus.INTERNAL_SERVER_ERROR ? exception.message : "",
+                message: mappingErrorMessages(httpStatus, exception.message)
             }
         };
 
         httpAdapter.reply(ctx.getResponse(), responseBody, httpStatus);
     }
+}
+
+function mappingErrorMessages(httpStatus, message) {
+    if (httpStatus === HttpStatus.INTERNAL_SERVER_ERROR) {
+        return 'Xảy ra lỗi, vui lòng thử lại!';
+    }
+    if (message === 'Unauthorized') {
+        return 'Vui lòng đăng nhập!'
+    }
+
+    return message;
 }
