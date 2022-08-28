@@ -51,4 +51,18 @@ export class AuthController {
             user: req.user
         }
     }
+
+    @Post('code')
+    async getCertifyCode(@Request() req): Promise<any> {
+        const email = req.body.email;
+        await this.authService.generateCertifyCode(email);
+        return;
+    }
+
+    @Post('sign-up')
+    async localSignUp(@Request() req): Promise<any> {
+        const credentials = req.body;
+        await this.authService.signUp(credentials);
+        return;
+    }
 }
