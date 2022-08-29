@@ -1,5 +1,4 @@
 import { Module } from '@nestjs/common';
-import { ConfigModule } from '@nestjs/config';
 import { MongooseModule } from '@nestjs/mongoose';
 import { JwtModule } from '@nestjs/jwt';
 import { AuthController } from './auth.controller';
@@ -13,6 +12,7 @@ import { LocalStrategy } from './strategies/local.strategy';
 import { JwtStrategy } from './strategies/jwt.strategy';
 import { User, UserSchema } from './schemas/user.schema';
 import { CertifyCode, CertifyCodeSchema } from './schemas/certifyCode.schema';
+import { ConfigModule } from '@nestjs/config';
 
 @Module({
     controllers: [AuthController],
@@ -29,7 +29,6 @@ import { CertifyCode, CertifyCodeSchema } from './schemas/certifyCode.schema';
     exports: [AuthService, CertifyCodeService, MailerService],
     imports: [
         ConfigModule.forRoot(),
-        MongooseModule.forRoot(process.env.DB_HOST),
         MongooseModule.forFeatureAsync([
             {
                 name: User.name,
