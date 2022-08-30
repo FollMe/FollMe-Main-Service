@@ -12,6 +12,7 @@ async function bootstrap() {
   app.useGlobalFilters(new AllExceptionsFilter(httpAdapter));
   
   app.enableCors();
-  await app.listen(process.env.port || 3000);
+  console.log("Sum PORT: ", process.env.PORT);
+  await app.listen(process.env.PORT || 3000);
 }
 bootstrap();
