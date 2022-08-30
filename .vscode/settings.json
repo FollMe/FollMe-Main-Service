@@ -1,5 +1,9 @@
 {
     "cSpell.words": [
         "nestjs"
+    ],
+    "appService.zipIgnorePattern": [
+        "node_modules{,/**}",
+        ".vscode{,/**}"
     ]
 }
