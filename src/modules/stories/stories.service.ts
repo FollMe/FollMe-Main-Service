@@ -3,6 +3,7 @@ import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { Story, StoryDocument } from './schemas/story.schema';
 import { Chap, ChapDocument } from './schemas/chap.schema'
+import { STORY_TYPE } from './story.instant';
 
 @Injectable()
 export class StoriesService {
@@ -49,5 +50,22 @@ export class StoriesService {
         }).sort({_id: -1 }).select('slug name');
 
         return { story, previousChap, nextChap };
+    }
+
+    async getShortStory(storySlug: string) {
+        const story = await this.storyModel.findOne({
+            slug: storySlug,
+            type: STORY_TYPE.SHORT,
+            isDeleted: { $ne: true } 
+        }).populate({
+            path: 'chaps',
+            options: { limit: 1 }
+        });
+
+        if (!story || story.chaps.length !== 1) {
+            throw new NotFoundException();
+        }
+
+        return story;
     }
 }
