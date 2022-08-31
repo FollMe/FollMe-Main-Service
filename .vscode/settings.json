@@ -6,5 +6,6 @@
         "node_modules{,/**}",
         ".vscode{,/**}"
     ],
-    "appService.deploySubpath": "."
+    "appService.deploySubpath": ".",
+    "appService.defaultWebAppToDeploy": "/subscriptions/6b149997-f422-4f84-a609-58ab72bd596d/microsoft.web/sites/subscriptions/6b149997-f422-4f84-a609-58ab72bd596d/resourceGroups/FollMe/providers/Microsoft.Web/sites/api-gateway-follme",
 }

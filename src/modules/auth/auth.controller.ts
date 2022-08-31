@@ -3,6 +3,15 @@ import { JwtService } from '@nestjs/jwt';
 import { AuthGuard } from '@nestjs/passport';
 import { AuthService } from './auth.service';
 
+function filterPublicField(user) {
+    return  {
+        avatar: user.avatar,
+        name: user.name,
+        slEmail: user.slEmail,
+        _id: user._id
+    }
+} 
+
 @Controller('api/auth')
 export class AuthController {
     constructor(
@@ -20,7 +29,7 @@ export class AuthController {
         const token = this.jwtService.sign(payload);
         return {
             token,
-            user: req.user
+            user: filterPublicField(req.user)
         }
     }
 
@@ -34,7 +43,7 @@ export class AuthController {
         const token = this.jwtService.sign(payload);
         return {
             token,
-            user: req.user
+            user: filterPublicField(req.user)
         }
     }
 
@@ -48,7 +57,7 @@ export class AuthController {
         const token = this.jwtService.sign(payload);
         return {
             token,
-            user: req.user
+            user: filterPublicField(req.user)
         }
     }
 
