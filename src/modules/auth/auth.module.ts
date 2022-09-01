@@ -13,6 +13,7 @@ import { JwtStrategy } from './strategies/jwt.strategy';
 import { User, UserSchema } from './schemas/user.schema';
 import { CertifyCode, CertifyCodeSchema } from './schemas/certifyCode.schema';
 import { ConfigModule } from '@nestjs/config';
+import { CacheService } from 'src/sharedServices/cache.service';
 
 @Module({
     controllers: [AuthController],
@@ -20,6 +21,7 @@ import { ConfigModule } from '@nestjs/config';
         AuthService,
         CertifyCodeService,
         MailerService,
+        CacheService,
         UserService,
         FacebookStrategy,
         GoogleStrategy,

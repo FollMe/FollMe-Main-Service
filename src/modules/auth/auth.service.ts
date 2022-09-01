@@ -11,7 +11,9 @@ import { CertifyCode, CertifyCodeDocument } from './schemas/certifyCode.schema';
 import { UserService } from './services/user.service';
 import { CertifyCodeService } from './services/certifyCode.service';
 import { MailerService } from 'src/sharedServices/mailer.service';
+import { CacheService } from 'src/sharedServices/cache.service';
 
+const CODE_DURATION = 5*60;
 const templateStr = fs.readFileSync(path.resolve(process.cwd(), 'src/templates/sendCodeEmail.template.hbs')).toString('utf8')
 const template = Handlebars.compile(templateStr);
 
@@ -24,7 +26,8 @@ export class AuthService {
         private certifyCodeModel: Model<CertifyCodeDocument>,
         private userService: UserService,
         private certifyCodeService: CertifyCodeService,
-        private mailerService: MailerService
+        private mailerService: MailerService,
+        private cacheService: CacheService,
     ) { }
 
     async checkCredential(email: string, password: string) {
@@ -100,28 +103,29 @@ export class AuthService {
             throw new HttpException("Email này đã được sử dụng", HttpStatus.BAD_REQUEST);
         }
 
-        // Generate new code & save to DB
+        // Generate new code & save to redis
         const code = Math.floor(100000 + Math.random() * 900000);
-        await this.certifyCodeModel.deleteOne({ email }).exec();
-        const certifyCode = await this.certifyCodeService.store(email, code);
+        await this.cacheService.redis.set(`certifyCodes:${email}`, code, "EX", CODE_DURATION);
 
         await this.mailerService.sendMail({
             from: '"FollMe " <follme.noreply@gmail.com>',
             to: email,
             subject: 'Mã xác thực cho FollMe',
-            html: template({ code: certifyCode.code })
+            html: template({ code })
         })
     }
 
     async signUp(credentials) {
         const { email, code, password } = credentials;
-        const isValid = await this.certifyCodeModel.exists({ email, code, expiredTime: {$gt: Date.now()} });
+        const cachedCode = await this.cacheService.redis.get(`certifyCodes:${email}`);
 
-        if (!isValid) {
+        console.log(cachedCode);
+
+        if (!cachedCode || cachedCode !== code) {
             throw new HttpException("Mã xác thực không chính xác", HttpStatus.BAD_REQUEST);
         }
 
         await this.userService.store(email, password);
-        await this.certifyCodeModel.deleteOne({ email });
+        await this.cacheService.redis.del(`certifyCodes:${email}`);
     }
 }
