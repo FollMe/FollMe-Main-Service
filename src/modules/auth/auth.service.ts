@@ -119,9 +119,7 @@ export class AuthService {
         const { email, code, password } = credentials;
         const cachedCode = await this.cacheService.redis.get(`certifyCodes:${email}`);
 
-        console.log(cachedCode);
-
-        if (!cachedCode || cachedCode !== code) {
+        if (!cachedCode || cachedCode != code) {
             throw new HttpException("Mã xác thực không chính xác", HttpStatus.BAD_REQUEST);
         }
 
