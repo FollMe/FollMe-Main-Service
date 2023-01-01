@@ -7,13 +7,12 @@ import FB from 'fb';
 import * as bcrypt from 'bcrypt'
 import Handlebars from 'handlebars';
 import { User, UserDocument } from './schemas/user.schema';
-import { CertifyCode, CertifyCodeDocument } from './schemas/certifyCode.schema';
+import { CertifyCode } from './schemas/certifyCode.schema';
 import { UserService } from './services/user.service';
-import { CertifyCodeService } from './services/certifyCode.service';
 import { MailerService } from 'src/sharedServices/mailer.service';
 import { CacheService } from 'src/sharedServices/cache.service';
 
-const CODE_DURATION = 5*60;
+const CODE_DURATION = 5 * 60;
 const templateStr = fs.readFileSync(path.resolve(process.cwd(), 'src/templates/sendCodeEmail.template.hbs')).toString('utf8')
 const template = Handlebars.compile(templateStr);
 
@@ -23,9 +22,7 @@ export class AuthService {
         @InjectModel(User.name)
         private userModel: Model<UserDocument>,
         @InjectModel(CertifyCode.name)
-        private certifyCodeModel: Model<CertifyCodeDocument>,
         private userService: UserService,
-        private certifyCodeService: CertifyCodeService,
         private mailerService: MailerService,
         private cacheService: CacheService,
     ) { }
@@ -64,7 +61,7 @@ export class AuthService {
             // Update picture link (because it's expiry so short)
             await user.updateOne({ avatar }).exec();
         }
-        
+
         return user;
     }
 
