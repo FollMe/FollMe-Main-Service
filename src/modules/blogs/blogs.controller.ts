@@ -7,6 +7,8 @@ import {
     UploadedFile,
     Body,
     ParseFilePipe,
+    Get,
+    Param,
     FileTypeValidator
 } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
@@ -25,6 +27,7 @@ export class BlogsController {
         @Request() req,
         @UploadedFile(
             new ParseFilePipe({
+                fileIsRequired: false,
                 validators: [
                     new FileTypeValidator({ fileType: 'image/*' }),
                 ],
@@ -34,5 +37,20 @@ export class BlogsController {
     ) {
         const res = await this.blogsService.createOne(body, file, req.user._id);
         return res;
+    }
+
+    @Get('/')
+    @UseGuards(AuthGuard("jwt"))
+    async getAllStory() {
+        const blogs = await this.blogsService.getAll();
+        return { blogs };
+    }
+
+    @Get('/:slug')
+    @UseGuards(AuthGuard("jwt"))
+    async getBlog(@Param() params) {
+        const slug = params.slug;
+        const blog = await this.blogsService.getBlog(slug);
+        return { blog };
     }
 }
