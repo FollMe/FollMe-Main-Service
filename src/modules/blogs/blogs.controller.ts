@@ -1,7 +1,18 @@
-import { Controller, Request, Post, UseGuards, UseInterceptors, UploadedFile, Body } from '@nestjs/common';
+import {
+    Controller,
+    Request,
+    Post,
+    UseGuards,
+    UseInterceptors,
+    UploadedFile,
+    Body,
+    ParseFilePipe,
+    FileTypeValidator
+} from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { BlogsService } from './blogs.service';
+import { CreateBlogDTO } from './dtos/createBlog.dto';
 
 @Controller('api/blogs')
 export class BlogsController {
@@ -12,8 +23,14 @@ export class BlogsController {
     @UseInterceptors(FileInterceptor('thumbnail'))
     async createBlog(
         @Request() req,
-        @UploadedFile() file: Express.Multer.File,
-        @Body() body: any,
+        @UploadedFile(
+            new ParseFilePipe({
+                validators: [
+                    new FileTypeValidator({ fileType: 'image/*' }),
+                ],
+            }),
+        ) file: Express.Multer.File,
+        @Body() body: CreateBlogDTO,
     ) {
         const res = await this.blogsService.createOne(body, file, req.user._id);
         return res;
