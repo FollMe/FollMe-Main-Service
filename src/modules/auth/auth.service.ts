@@ -7,7 +7,6 @@ import FB from 'fb';
 import * as bcrypt from 'bcrypt'
 import Handlebars from 'handlebars';
 import { User, UserDocument } from './schemas/user.schema';
-import { CertifyCode } from './schemas/certifyCode.schema';
 import { UserService } from './services/user.service';
 import { MailerService } from 'src/sharedServices/mailer.service';
 import { CacheService } from 'src/sharedServices/cache.service';
@@ -21,7 +20,6 @@ export class AuthService {
     constructor(
         @InjectModel(User.name)
         private userModel: Model<UserDocument>,
-        @InjectModel(CertifyCode.name)
         private userService: UserService,
         private mailerService: MailerService,
         private cacheService: CacheService,
