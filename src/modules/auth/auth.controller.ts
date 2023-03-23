@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Request, UseGuards } from '@nestjs/common';
+import { Controller, Get, Post, Request, UseGuards, Response } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { AuthGuard } from '@nestjs/passport';
 import { AuthService } from './auth.service';
@@ -77,9 +77,9 @@ export class AuthController {
 
     @Get('is-logged-in')
     @UseGuards(AuthGuard("jwt"))
-    async checkIsUserLoggedIn(@Request() req): Promise<any> {
-        return {
-            isLoggedIn: true
-        };
+    async checkIsUserLoggedIn(@Request() req, @Response() res): Promise<any> {
+        const userInfo = req.user;
+        const userString = Buffer.from(JSON.stringify(userInfo)).toString('base64');
+        return res.set({ 'X-User-Info': userString }).json({ isLoggedIn: true });
     }
 }
