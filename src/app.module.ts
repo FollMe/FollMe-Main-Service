@@ -4,6 +4,7 @@ import { AuthModule } from './modules/auth/auth.module';
 import { ConfigModule } from '@nestjs/config';
 import { MongooseModule } from '@nestjs/mongoose';
 import { BlogsModule } from './modules/blogs/blogs.module';
+import { ProfileModule } from './modules/profiles/profile.module';
 
 @Module({
     imports: [
@@ -11,7 +12,8 @@ import { BlogsModule } from './modules/blogs/blogs.module';
         MongooseModule.forRoot(process.env.DB_HOST),
         StoriesModule,
         BlogsModule,
-        AuthModule
+        AuthModule,
+        ProfileModule,
     ],
 })
 export class AppModule { }
