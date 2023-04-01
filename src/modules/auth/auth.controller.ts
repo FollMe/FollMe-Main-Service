@@ -78,7 +78,7 @@ export class AuthController {
     @Get('is-logged-in')
     @UseGuards(AuthGuard("jwt"))
     async checkIsUserLoggedIn(@Request() req, @Response() res): Promise<any> {
-        const userInfo = req.user;
+        const userInfo = filterPublicField(req.user);
         const userString = Buffer.from(JSON.stringify(userInfo)).toString('base64');
         return res.set({ 'X-User-Info': userString }).json({ isLoggedIn: true });
     }
