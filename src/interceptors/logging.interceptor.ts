@@ -15,6 +15,7 @@ export class LoggingInterceptor implements NestInterceptor {
           location: `[${request.method}] ${request.url}`,
           slEmail: request.user?.slEmail,
           responseCode: context.switchToHttp().getResponse().statusCode,
+          userAgent: request.headers['user-agent']
         })
       }));
   }
