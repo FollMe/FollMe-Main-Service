@@ -5,10 +5,11 @@ import { ConfigModule } from '@nestjs/config';
 import { MongooseModule } from '@nestjs/mongoose';
 import { BlogsModule } from './modules/blogs/blogs.module';
 import { ProfileModule } from './modules/profiles/profile.module';
-import { APP_INTERCEPTOR } from '@nestjs/core';
+import { APP_INTERCEPTOR, APP_FILTER } from '@nestjs/core';
 import { LoggingInterceptor } from './interceptors/logging.interceptor';
 import { LogService } from './modules/logsConfig/logs.service';
 import { Log, LogSchema } from './modules/logsConfig/schemas/log.schema';
+import { AllExceptionsFilter } from './allException.filter';
 
 @Module({
   imports: [
@@ -33,6 +34,10 @@ import { Log, LogSchema } from './modules/logsConfig/schemas/log.schema';
     {
       provide: APP_INTERCEPTOR,
       useClass: LoggingInterceptor,
+    },
+    {
+      provide: APP_FILTER,
+      useClass: AllExceptionsFilter,
     },
     LogService
   ],
