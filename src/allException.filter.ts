@@ -42,6 +42,10 @@ export class AllExceptionsFilter implements ExceptionFilter {
 
     // Logging
     const request = host.switchToHttp().getRequest();
+    if (request.method === 'HEAD' || request.headers['user-agent'].include("Checkly")) {
+      return
+    }
+
     this.logService.createOne({
       location: `[${request.method}] ${request.url}`,
       slEmail: request.user?.slEmail,
