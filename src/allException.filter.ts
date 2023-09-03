@@ -42,7 +42,7 @@ export class AllExceptionsFilter implements ExceptionFilter {
 
     // Logging
     const request = host.switchToHttp().getRequest();
-    if (request.method === 'HEAD' || request.headers['user-agent'].include("Checkly")) {
+    if (request.method === 'HEAD' || request.headers['user-agent']?.includes("Checkly")) {
       return
     }
 
