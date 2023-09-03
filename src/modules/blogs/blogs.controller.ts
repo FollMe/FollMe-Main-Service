@@ -40,14 +40,12 @@ export class BlogsController {
     }
 
     @Get('/')
-    @UseGuards(AuthGuard("jwt"))
     async getAllStory() {
         const blogs = await this.blogsService.getAll();
         return { blogs };
     }
 
     @Get('/:slug')
-    @UseGuards(AuthGuard("jwt"))
     async getBlog(@Param() params) {
         const slug = params.slug;
         const blog = await this.blogsService.getBlog(slug);

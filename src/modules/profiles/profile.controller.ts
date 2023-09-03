@@ -1,5 +1,4 @@
-import { Controller, Post, UseGuards, HttpCode, Body } from '@nestjs/common';
-import { AuthGuard } from '@nestjs/passport';
+import { Controller, Post, HttpCode, Body } from '@nestjs/common';
 import { ProfileService } from './profile.service';
 import { GetProfilesDTO } from './dtos/getProfiles.dto';
 
@@ -11,7 +10,6 @@ export class UserController {
 
   @Post('get')
   @HttpCode(200)
-  @UseGuards(AuthGuard("jwt"))
   async getUserProfiles(
     @Body() body: GetProfilesDTO,
   ) {
