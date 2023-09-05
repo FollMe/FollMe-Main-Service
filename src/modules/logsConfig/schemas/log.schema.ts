@@ -6,7 +6,8 @@ export class Log {
   location: string;
   slEmail: string;
   responseCode: number;
-  userAgent: string
+  userAgent: string;
+  browser: string;
 }
 
 export const LogSchema = new Schema({
@@ -14,6 +15,7 @@ export const LogSchema = new Schema({
   slEmail: String,
   responseCode: Number,
   userAgent: String,
+  browser: String,
 }, { timestamps: true });
 
 export type LogDocument = Log & Document;

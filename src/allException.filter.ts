@@ -50,7 +50,8 @@ export class AllExceptionsFilter implements ExceptionFilter {
       location: `[${request.method}] ${request.url}`,
       slEmail: request.user?.slEmail,
       responseCode: httpStatus,
-      userAgent: request.headers['user-agent']
+      userAgent: request.headers['user-agent'],
+      browser: request.headers['sec-ch-ua'],
     })
   }
 }
