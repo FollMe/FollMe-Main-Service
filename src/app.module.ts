@@ -10,6 +10,7 @@ import { LoggingInterceptor } from './interceptors/logging.interceptor';
 import { LogService } from './modules/logsConfig/logs.service';
 import { Log, LogSchema } from './modules/logsConfig/schemas/log.schema';
 import { AllExceptionsFilter } from './allException.filter';
+import { InvitationModule } from './modules/invitation/invitations.module';
 
 @Module({
   imports: [
@@ -19,6 +20,7 @@ import { AllExceptionsFilter } from './allException.filter';
     BlogsModule,
     AuthModule,
     ProfileModule,
+    InvitationModule,
     MongooseModule.forFeatureAsync([
       {
         name: Log.name,
