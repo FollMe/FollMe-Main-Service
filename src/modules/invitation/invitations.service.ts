@@ -20,12 +20,12 @@ export class InvitationsService {
       .populate('numGuests');
   }
 
-  async findOne(eventId: string, userId: string) {
+  async findOne(eventId: string) {
     if (!mongoose.isValidObjectId(eventId)) {
       throw new HttpException("Invalid eventId", HttpStatus.BAD_REQUEST);
     }
 
-    const invitation = await this.eventModel.findOne({ isDeleted: { $ne: true }, host: userId, _id: eventId })
+    const invitation = await this.eventModel.findOne({ isDeleted: { $ne: true }, _id: eventId })
       .select('-isDeleted -host')
       .populate('guests', '_id mail viewed');
 
