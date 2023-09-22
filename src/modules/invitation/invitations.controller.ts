@@ -22,7 +22,7 @@ export class invitationsController {
     @Request() req,
     @Body() body: CreateInvitationDTO,
   ) {
-    const res = await this.invitationsService.createOne(body, req.user._id);
+    const res = await this.invitationsService.createOne(body, req.user._id, req.user.slEmail);
     return res;
   }
 

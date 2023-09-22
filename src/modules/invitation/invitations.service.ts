@@ -1,8 +1,15 @@
+import * as path from 'path';
+import * as fs from 'fs';
 import { HttpException, HttpStatus, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectModel, InjectConnection } from '@nestjs/mongoose';
 import { Event, EventDocument } from './schemas/event.schema';
 import { Guest, GuestDocument } from './schemas/guest.schema';
 import * as mongoose from 'mongoose';
+import { MailerService } from 'src/sharedServices/mailer.service';
+import Handlebars from 'handlebars';
+
+const templateStr = fs.readFileSync(path.resolve(process.cwd(), 'src/templates/sendInvitation.template.hbs')).toString('utf8')
+const template = Handlebars.compile(templateStr);
 
 @Injectable()
 export class InvitationsService {
@@ -12,7 +19,8 @@ export class InvitationsService {
     @InjectModel(Guest.name)
     private readonly guestModel: mongoose.Model<GuestDocument>,
     @InjectConnection()
-    private readonly connection: mongoose.Connection
+    private readonly connection: mongoose.Connection,
+    private readonly mailerService: MailerService,
   ) { }
   async getAll(userId: string) {
     return await this.eventModel.find({ isDeleted: { $ne: true }, host: userId })
@@ -62,7 +70,7 @@ export class InvitationsService {
     return invitation;
   }
 
-  async createOne(invitation: any, userId: string) {
+  async createOne(invitation: any, userId: string, slEmail: string) {
     const session = await this.connection.startSession();
     session.startTransaction();
     try {
@@ -71,8 +79,9 @@ export class InvitationsService {
         host: userId
       }).save({ session })
 
-      if (Array.isArray(invitation.guests) && invitation.guests.length) {
-        await this.guestModel.insertMany(invitation.guests.map(guest => ({
+      var guestList = []
+      if (invitation.guests.length) {
+        guestList = await this.guestModel.insertMany(invitation.guests.map(guest => ({
           event: event._id,
           mail: guest
         })), {
@@ -80,6 +89,19 @@ export class InvitationsService {
         })
       }
       await session.commitTransaction();
+
+      // Send email to guests
+      guestList.forEach(guest => {
+        this.mailerService.sendMail({
+          from: '"FollMe " <follme.noreply@gmail.com>',
+          to: guest.mail,
+          subject: '[FollMe.eCard] Thư mời sự kiện',
+          html: template({
+            sender: slEmail,
+            invitationUrl: `${process.env.FE_URL}/invitations/${guest._id}`
+          })
+        })
+      })
 
       return {
         _id: event._id,

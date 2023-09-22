@@ -4,11 +4,12 @@ import { InvitationsService } from './invitations.service';
 import { MongooseModule } from '@nestjs/mongoose';
 import { Event, EventSchema } from './schemas/event.schema';
 import { Guest, GuestSchema } from './schemas/guest.schema';
+import { MailerService } from 'src/sharedServices/mailer.service';
 
 @Module({
   controllers: [invitationsController],
-  providers: [InvitationsService],
-  exports: [InvitationsService],
+  providers: [InvitationsService, MailerService],
+  exports: [InvitationsService, MailerService],
   imports: [
     MongooseModule.forFeatureAsync([
       {
