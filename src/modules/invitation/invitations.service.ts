@@ -36,6 +36,32 @@ export class InvitationsService {
     return invitation;
   }
 
+  async findGuest(guestId: string) {
+    if (!mongoose.isValidObjectId(guestId)) {
+      throw new HttpException("Invalid eventId", HttpStatus.BAD_REQUEST);
+    }
+
+    const invitation = await this.guestModel.findOne({ isDeleted: { $ne: true }, _id: guestId })
+      .select('-isDeleted')
+      .populate('event', '-isDeleted');
+
+    if (!invitation) {
+      throw new NotFoundException();
+    }
+
+    // Increase number of viewed
+    try {
+      await this.guestModel.updateOne(
+        { _id: guestId },
+        { viewed: (invitation.viewed ?? 0) + 1 }
+      )
+    } catch (err) {
+      console.log(err);
+    }
+
+    return invitation;
+  }
+
   async createOne(invitation: any, userId: string) {
     const session = await this.connection.startSession();
     session.startTransaction();

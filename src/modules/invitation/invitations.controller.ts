@@ -3,11 +3,11 @@ import { InvitationsService } from './invitations.service';
 import { AuthGuard } from '@nestjs/passport';
 import { CreateInvitationDTO } from './dtos/createBlog.dto';
 
-@Controller('api/invitations')
+@Controller('api')
 export class invitationsController {
   constructor(private readonly invitationsService: InvitationsService) { }
 
-  @Get('/')
+  @Get('/events')
   @UseGuards(AuthGuard("jwt"))
   async getAllInvitations(
     @Request() req,
@@ -16,9 +16,9 @@ export class invitationsController {
     return { invitations };
   }
 
-  @Post('/')
+  @Post('/events')
   @UseGuards(AuthGuard("jwt"))
-  async createBlog(
+  async createEvent(
     @Request() req,
     @Body() body: CreateInvitationDTO,
   ) {
@@ -26,14 +26,23 @@ export class invitationsController {
     return res;
   }
 
-  @Get('/:id')
+  @Get('events/:id')
   @UseGuards(AuthGuard("jwt"))
-  async getInvitation(
+  async getEvent(
     @Request() req,
     @Param() params
   ) {
     const invitationId = params.id;
     const invitation = await this.invitationsService.findOne(invitationId, req.user._id);
+    return { invitation };
+  }
+
+  @Get('invitations/:id')
+  async getInvitation(
+    @Param() params
+  ) {
+    const invitationId = params.id;
+    const invitation = await this.invitationsService.findGuest(invitationId);
     return { invitation };
   }
 }
