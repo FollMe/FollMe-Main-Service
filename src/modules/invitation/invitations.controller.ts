@@ -18,7 +18,7 @@ export class invitationsController {
 
   @Post('/')
   @UseGuards(AuthGuard("jwt"))
-  async createInvitation(
+  async createBlog(
     @Request() req,
     @Body() body: CreateInvitationDTO,
   ) {
@@ -27,11 +27,13 @@ export class invitationsController {
   }
 
   @Get('/:id')
+  @UseGuards(AuthGuard("jwt"))
   async getInvitation(
+    @Request() req,
     @Param() params
   ) {
     const invitationId = params.id;
-    const invitation = await this.invitationsService.findOne(invitationId);
+    const invitation = await this.invitationsService.findOne(invitationId, req.user._id);
     return { invitation };
   }
 }
