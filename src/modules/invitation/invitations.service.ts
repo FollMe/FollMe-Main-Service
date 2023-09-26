@@ -30,7 +30,7 @@ export class InvitationsService {
 
   async findOne(eventId: string, userId: string) {
     if (!mongoose.isValidObjectId(eventId)) {
-      throw new HttpException("Invalid eventId", HttpStatus.BAD_REQUEST);
+      throw new HttpException("Không tìm thấy tài nguyên!", HttpStatus.BAD_REQUEST);
     }
 
     const invitation = await this.eventModel.findOne({ isDeleted: { $ne: true }, host: userId, _id: eventId })
@@ -46,7 +46,7 @@ export class InvitationsService {
 
   async findGuest(guestId: string) {
     if (!mongoose.isValidObjectId(guestId)) {
-      throw new HttpException("Invalid eventId", HttpStatus.BAD_REQUEST);
+      throw new HttpException("Không tìm thấy tài nguyên!", HttpStatus.BAD_REQUEST);
     }
 
     const invitation = await this.guestModel.findOne({ isDeleted: { $ne: true }, _id: guestId })
