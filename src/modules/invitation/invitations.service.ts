@@ -49,22 +49,16 @@ export class InvitationsService {
       throw new HttpException("Không tìm thấy tài nguyên!", HttpStatus.BAD_REQUEST);
     }
 
-    const invitation = await this.guestModel.findOne({ isDeleted: { $ne: true }, _id: guestId })
-      .select('-isDeleted')
+    const invitation = await this.guestModel.findOneAndUpdate({
+      isDeleted: { $ne: true },
+      _id: guestId
+    }, {
+      $inc: { viewed: 1 }
+    }).select('-isDeleted')
       .populate('event', '-isDeleted');
 
     if (!invitation) {
       throw new NotFoundException();
-    }
-
-    // Increase number of viewed
-    try {
-      await this.guestModel.updateOne(
-        { _id: guestId },
-        { viewed: (invitation.viewed ?? 0) + 1 }
-      )
-    } catch (err) {
-      console.log(err);
     }
 
     return invitation;
