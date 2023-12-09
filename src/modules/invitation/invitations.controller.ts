@@ -1,7 +1,7 @@
 import { Body, Controller, Get, Request, Post, UseGuards, Param } from '@nestjs/common';
 import { InvitationsService } from './invitations.service';
 import { AuthGuard } from '@nestjs/passport';
-import { CreateInvitationDTO } from './dtos/createBlog.dto';
+import { CreateInvitationDTO } from './dtos/createInvitation.dto';
 
 @Controller('api')
 export class invitationsController {
