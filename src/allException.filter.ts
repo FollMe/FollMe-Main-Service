@@ -7,14 +7,12 @@ import {
   Logger,
 } from '@nestjs/common';
 import { HttpAdapterHost } from '@nestjs/core';
-import { LogService } from './modules/logsConfig/logs.service';
 
 @Catch()
 export class AllExceptionsFilter implements ExceptionFilter {
   logger: Logger = new Logger(AllExceptionsFilter.name);
   constructor(
     private readonly httpAdapterHost: HttpAdapterHost,
-    private logService: LogService
   ) { }
 
   catch(exception: any, host: ArgumentsHost): void {
@@ -39,20 +37,6 @@ export class AllExceptionsFilter implements ExceptionFilter {
     };
 
     httpAdapter.reply(ctx.getResponse(), responseBody, httpStatus);
-
-    // Logging
-    const request = host.switchToHttp().getRequest();
-    if (request.method === 'HEAD' || request.headers['user-agent']?.includes("Checkly")) {
-      return
-    }
-
-    this.logService.createOne({
-      location: `[${request.method}] ${request.url}`,
-      slEmail: request.user?.slEmail,
-      responseCode: httpStatus,
-      userAgent: request.headers['user-agent'],
-      browser: request.headers['sec-ch-ua'],
-    })
   }
 }
 
