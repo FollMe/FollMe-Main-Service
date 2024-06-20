@@ -30,8 +30,8 @@ export class ProfileService {
 
   async getProfilesByPartName(partName: string) {
     const searchRegex = new RegExp(partName, 'i');
-    const profilesRaw = await this.cachedService.redis.get("profiles")
-    let allProfiles
+    const profilesRaw = await this.cachedService.get("profiles");
+    let allProfiles: UserDocument[];
 
     if (profilesRaw) {
       allProfiles = JSON.parse(profilesRaw);
@@ -43,7 +43,7 @@ export class ProfileService {
       allProfiles.forEach(profile =>
         profile.slug = removeAccent(profile.name ?? profile.slEmail)
       )
-      this.cachedService.redis.set("profiles", JSON.stringify(allProfiles), "EX", CACHED_PROFILE_DURATION)
+      this.cachedService.set("profiles", JSON.stringify(allProfiles), CACHED_PROFILE_DURATION);
     }
 
     const matchedProfiles = [];
