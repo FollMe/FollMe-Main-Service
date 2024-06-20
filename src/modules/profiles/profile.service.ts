@@ -29,7 +29,7 @@ export class ProfileService {
   }
 
   async getProfilesByPartName(partName: string) {
-    const searchRegex = new RegExp(partName, 'i');
+    const searchString = partName.toLowerCase();
     const profilesRaw = await this.cachedService.get("profiles");
     let allProfiles: UserDocument[];
 
@@ -48,7 +48,7 @@ export class ProfileService {
 
     const matchedProfiles = [];
     for (const profile of allProfiles) {
-      if (searchRegex.test(profile.slug)) {
+      if (profile.slug.includes(searchString)) {
         matchedProfiles.push({
           ...profile,
           slug: undefined,
