@@ -100,7 +100,7 @@ export class AuthService {
 
         // Generate new code & save to redis
         const code = Math.floor(100000 + Math.random() * 900000);
-        await this.cacheService.redis.set(`certifyCodes:${email}`, code, "EX", CODE_DURATION);
+        await this.cacheService.set(`certifyCodes:${email}`, code, CODE_DURATION);
 
         await this.mailerService.sendMail({
             from: '"FollMe " <follme.noreply@gmail.com>',
@@ -112,13 +112,12 @@ export class AuthService {
 
     async signUp(credentials) {
         const { email, code, password } = credentials;
-        const cachedCode = await this.cacheService.redis.get(`certifyCodes:${email}`);
-
+        const cachedCode = await this.cacheService.get(`certifyCodes:${email}`);
         if (!cachedCode || cachedCode != code) {
             throw new HttpException("Mã xác thực không chính xác", HttpStatus.BAD_REQUEST);
         }
 
         await this.userService.store(email, password);
-        await this.cacheService.redis.del(`certifyCodes:${email}`);
+        await this.cacheService.del(true, `certifyCodes:${email}`);
     }
 }

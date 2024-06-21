@@ -30,20 +30,18 @@ export class ProfileService {
 
   async getProfilesByPartName(partName: string) {
     const searchString = partName.toLowerCase();
-    const profilesRaw = await this.cachedService.get("profiles");
-    let allProfiles: UserDocument[];
+    let allProfiles = <UserDocument[]><any>await this.cachedService.getJSON("profiles");
 
-    if (profilesRaw) {
-      allProfiles = JSON.parse(profilesRaw);
-    } else {
+    if (!allProfiles) {
       allProfiles = await this.userModel.find({ isDeleted: { $ne: true } })
         .select('_id name slEmail avatar')
         .lean();
 
       allProfiles.forEach(profile =>
         profile.slug = removeAccent(profile.name ?? profile.slEmail)
-      )
-      this.cachedService.set("profiles", JSON.stringify(allProfiles), CACHED_PROFILE_DURATION);
+      );
+
+      this.cachedService.setJSON("profiles", allProfiles, CACHED_PROFILE_DURATION);
     }
 
     const matchedProfiles = [];
