@@ -29,7 +29,7 @@ export class ProfileService {
   }
 
   async getProfilesByPartName(partName: string) {
-    const searchString = partName.toLowerCase();
+    const searchString = removeAccent(partName);
     let allProfiles = <UserDocument[]><any>await this.cachedService.getJSON("profiles");
 
     if (!allProfiles) {
