@@ -1,6 +1,7 @@
 import { Injectable, NestInterceptor, ExecutionContext, CallHandler } from '@nestjs/common';
 import { Observable, tap } from 'rxjs';
 import { LogService } from '../modules/logsConfig/logs.service';
+import { getRequestIdentity } from 'src/utils/requestHepler';
 
 @Injectable()
 export class LoggingInterceptor implements NestInterceptor {
@@ -16,8 +17,7 @@ export class LoggingInterceptor implements NestInterceptor {
             location: `[${request.method}] ${request.url}`,
             slEmail: request.user?.slEmail,
             responseCode: context.switchToHttp().getResponse().statusCode,
-            userAgent: request.headers['user-agent'],
-            browser: request.headers['sec-ch-ua'],
+            ...getRequestIdentity(request)
           })
         }
       }));
