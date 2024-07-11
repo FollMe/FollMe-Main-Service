@@ -25,6 +25,7 @@ export class InvitationsService {
   async getAll(userId: string) {
     return await this.eventModel.find({ isDeleted: { $ne: true }, host: userId })
       .select('-isDeleted -host')
+      .sort({ startAt: -1 })
       .populate('numGuests');
   }
 
