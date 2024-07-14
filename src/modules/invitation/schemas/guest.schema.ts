@@ -1,6 +1,7 @@
 import { Schema } from 'mongoose';
 
 export class Guest {
+  name: string;
   mail: string;
   viewed: number;
   event: string;
@@ -8,7 +9,8 @@ export class Guest {
 }
 
 export const GuestSchema = new Schema({
-  mail: { type: String, require: true },
+  name: { type: String, require: true },
+  mail: { type: String },
   viewed: { type: Number, require: true, default: 0 },
   event: { type: Schema.Types.ObjectId, ref: 'Event', require: true },
   isDeleted: { type: Boolean, default: false }

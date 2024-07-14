@@ -1,4 +1,6 @@
-import { IsNotEmpty, IsArray, IsOptional, IsDateString, IsEmail } from "class-validator";
+import { Type } from "class-transformer";
+import { IsNotEmpty, IsArray, IsOptional, IsDateString, IsEmail, IsObject, ValidateNested } from "class-validator";
+import { GuestDTO } from "./guest.dto";
 
 export class CreateInvitationDTO {
   @IsNotEmpty()
@@ -13,8 +15,9 @@ export class CreateInvitationDTO {
   @IsDateString()
   startAt: string;
 
-  @IsArray()
-  @IsEmail({} , { each: true })
   @IsOptional()
-  guests: String[];
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => GuestDTO)
+  guests: GuestDTO[];
 }

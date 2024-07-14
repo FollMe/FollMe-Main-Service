@@ -25,6 +25,7 @@ export class InvitationsService {
   async getAll(userId: string) {
     return await this.eventModel.find({ isDeleted: { $ne: true }, host: userId })
       .select('-isDeleted -host')
+      .sort({ startAt: -1 })
       .populate('numGuests');
   }
 
@@ -77,7 +78,8 @@ export class InvitationsService {
       if (invitation.guests.length) {
         guestList = await this.guestModel.insertMany(invitation.guests.map(guest => ({
           event: event._id,
-          mail: guest
+          name: guest.name,
+          mail: guest.email
         })), {
           session
         })
@@ -86,15 +88,17 @@ export class InvitationsService {
 
       // Send email to guests
       guestList.forEach(guest => {
-        this.mailerService.sendMail({
-          from: '"FollMe " <follme.noreply@gmail.com>',
-          to: guest.mail,
-          subject: '[FollMe.eCard] Thư mời sự kiện',
-          html: template({
-            sender: slEmail,
-            invitationUrl: `${process.env.FE_URL}/invitations/${guest._id}`
+        if (guest.mail) {
+          this.mailerService.sendMail({
+            from: '"FollMe " <follme.noreply@gmail.com>',
+            to: guest.mail,
+            subject: '[FollMe.eCard] Thư mời sự kiện',
+            html: template({
+              sender: slEmail,
+              invitationUrl: `${process.env.FE_URL}/invitations/${guest._id}`
+            })
           })
-        })
+        }
       })
 
       return {
