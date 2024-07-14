@@ -36,7 +36,7 @@ export class InvitationsService {
 
     const invitation = await this.eventModel.findOne({ isDeleted: { $ne: true }, host: userId, _id: eventId })
       .select('-isDeleted -host')
-      .populate('guests', '_id mail viewed');
+      .populate('guests', '_id name mail viewed');
 
     if (!invitation) {
       throw new NotFoundException();
