@@ -6,6 +6,7 @@ export class Blog {
     content: string;
     author: string;
     slug: string;
+    viewed: number;
     isDeleted: Boolean;
 }
 
@@ -15,6 +16,7 @@ export const BlogSchema = new Schema({
     content: { type: String, require: true },
     author: { type: Schema.Types.ObjectId, ref: 'User' },
     slug: { type: String, slug: "title", unique: true, require: true },
+    viewed: { type: Number, require: true, default: 0 },
     isDeleted: { type: Boolean, default: false }
 }, {
     timestamps: true,
