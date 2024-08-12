@@ -13,6 +13,7 @@ const template = Handlebars.compile(templateStr);
 
 @Injectable()
 export class InvitationsService {
+  private readonly limit = 5;
   constructor(
     @InjectModel(Event.name)
     private readonly eventModel: mongoose.Model<EventDocument>,
@@ -22,11 +23,15 @@ export class InvitationsService {
     private readonly connection: mongoose.Connection,
     private readonly mailerService: MailerService,
   ) { }
-  async getAll(userId: string) {
+  async getList(userId: string, page: number = 1) {
+    const offset = page > 1 ? (page - 1) * this.limit : 0;
+
     return await this.eventModel.find({ isDeleted: { $ne: true }, host: userId })
       .select('-isDeleted -host')
-      .sort({ startAt: -1 })
-      .populate('numGuests');
+      .sort({ startAt: -1, _id: 1 })
+      .populate('numGuests')
+      .limit(this.limit)
+      .skip(offset);
   }
 
   async findOne(eventId: string, userId: string) {

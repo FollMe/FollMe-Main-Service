@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Request, Post, UseGuards, Param } from '@nestjs/common';
+import { Body, Controller, Get, Request, Post, UseGuards, Param, Query } from '@nestjs/common';
 import { InvitationsService } from './invitations.service';
 import { AuthGuard } from '@nestjs/passport';
 import { CreateInvitationDTO } from './dtos/createInvitation.dto';
@@ -11,8 +11,10 @@ export class invitationsController {
   @UseGuards(AuthGuard("jwt"))
   async getAllInvitations(
     @Request() req,
+    @Query('page') page: number,
   ) {
-    const invitations = await this.invitationsService.getAll(req.user._id);
+    page = Number(page) || 1;
+    const invitations = await this.invitationsService.getList(req.user._id, page);
     return { invitations };
   }
 
