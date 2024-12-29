@@ -43,7 +43,8 @@ export class BlogsService {
     const blog = await this.blogModel.findOneAndUpdate(
       { slug, isDeleted: { $ne: true } },
       { $inc: { viewed: 1 } }
-    ).populate('author', '_id name slEmail')
+    ).setOptions({ timestamps: false })
+    .populate('author', '_id name slEmail')
 
     if (!blog) {
       throw new NotFoundException();
