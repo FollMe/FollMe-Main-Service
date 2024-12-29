@@ -3,6 +3,7 @@ import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { CloudinaryService } from 'src/sharedServices/cloudinary.service';
 import { Blog, BlogDocument } from './schemas/blog.schema';
+import { SearchBlogDTO } from './dtos/searchBlog.dto';
 
 @Injectable()
 export class BlogsService {
@@ -33,8 +34,9 @@ export class BlogsService {
     }
   }
 
-  async getAll() {
+  async getAll(search: SearchBlogDTO) {
     return await this.blogModel.find({ isDeleted: { $ne: true } })
+      .sort(search.sort)
       .select('-content -isDeleted')
       .populate('author', '_id name slEmail')
   }
