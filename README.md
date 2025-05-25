@@ -22,52 +22,129 @@
   <!--[![Backers on Open Collective](https://opencollective.com/nest/backers/badge.svg)](https://opencollective.com/nest#backer)
   [![Sponsors on Open Collective](https://opencollective.com/nest/sponsors/badge.svg)](https://opencollective.com/nest#sponsor)-->
 
-## Description
+# FollMe Backend
 
-[Nest](https://github.com/nestjs/nest) framework TypeScript starter repository.
+FollMe is a backend service built with the [NestJS](https://nestjs.com/) framework. It provides APIs for managing user authentication, blogs, invitations, profiles, and stories. This project is designed to support a scalable and efficient server-side application.
+
+## Features
+
+- **Authentication**: Supports local, Google, and Facebook login strategies.
+- **Blog Management**: Create, retrieve, and manage blogs with support for thumbnails.
+- **Story Management**: Manage stories and chapters with support for short and series types.
+- **Invitation System**: Send event invitations via email and track guest responses.
+- **Profile Management**: Search and retrieve user profiles.
+- **Caching**: Uses Redis for caching frequently accessed data.
+- **Cloudinary Integration**: Handles image uploads and storage.
+
+## Project Structure
+
+The project is organized into the following main directories:
+
+- **src/**: Contains the main application code.
+  - **interceptors/**: Custom interceptors for logging, transforming, and retrieving user information.
+  - **modules/**: Contains feature modules for authentication, blogs, invitations, profiles, and stories.
+    - **auth/**: Handles user authentication and authorization.
+      - **schemas/**: Defines the database schemas for users and certification codes.
+      - **services/**: Contains services for managing users and certification codes.
+      - **strategies/**: Implements authentication strategies (local, Google, Facebook, JWT).
+    - **blogs/**: Manages blog-related operations.
+      - **dtos/**: Data Transfer Objects for creating and searching blogs.
+      - **schemas/**: Defines the database schema for blogs.
+    - **invitation/**: Manages event invitations and guest responses.
+      - **dtos/**: Data Transfer Objects for creating invitations and managing guests.
+      - **schemas/**: Defines the database schemas for events and guests.
+    - **profiles/**: Handles profile search and retrieval.
+      - **dtos/**: Data Transfer Objects for profile-related operations.
+    - **stories/**: Manages stories and their chapters.
+      - **schemas/**: Defines the database schemas for stories and chapters.
+  - **sharedServices/**: Contains shared services for caching, email handling, and image uploads.
+  - **templates/**: Email templates for sending invitations and codes.
+  - **utils/**: Utility functions for common operations like removing accents and handling requests.
 
 ## Installation
 
-```bash
-$ npm install
-```
+1. Clone the repository:
+   ```bash
+   git clone https://github.com/your-username/FollMe-BE.git
+   cd FollMe-BE
+   ```
 
-## Running the app
+2. Install dependencies:
+   ```bash
+   npm install
+   ```
 
-```bash
-# development
-$ npm run start
+3. Set up environment variables:
+   - Create a `.env` file in the root directory.
+   - Add the following variables:
+     ```env
+     PORT=3000
+     DB_HOST=<your-mongodb-connection-string>
+     JWT_SECRET=<your-jwt-secret>
+     GMAIL=<your-gmail-address>
+     GMAIL_APP_PASS=<your-gmail-app-password>
+     CLOUD_NAME=<your-cloudinary-cloud-name>
+     CLOUD_API_KEY=<your-cloudinary-api-key>
+     CLOUD_API_SECRET=<your-cloudinary-api-secret>
+     REDIS_USERNAME=<your-redis-username>
+     REDIS_PASSWORD=<your-redis-password>
+     REDIS_HOST=<your-redis-host>
+     REDIS_PORT=<your-redis-port>
+     FE_URL=<your-frontend-url>
+     GOOGLE_CLIENT_ID=<your-google-client-id>
+     ```
 
-# watch mode
-$ npm run start:dev
+4. Build the project:
+   ```bash
+   npm run build
+   ```
 
-# production mode
-$ npm run start:prod
-```
+5. Run the application:
+   ```bash
+   # Development mode
+   npm run start:dev
 
-## Test
+   # Production mode
+   npm run start:prod
+   ```
 
-```bash
-# unit tests
-$ npm run test
+## API Documentation
 
-# e2e tests
-$ npm run test:e2e
+### Authentication
+- **POST /api/auth/local**: Login with email and password.
+- **POST /api/auth/google**: Login with Google.
+- **POST /api/auth/facebook**: Login with Facebook.
+- **POST /api/auth/sign-up**: Sign up with email, password, and verification code.
 
-# test coverage
-$ npm run test:cov
-```
+### Blogs
+- **POST /api/blogs**: Create a new blog.
+- **GET /api/blogs**: Retrieve all blogs.
+- **GET /api/blogs/:slug**: Retrieve a specific blog by slug.
 
-## Support
+### Invitations
+- **POST /api/events**: Create a new event and send invitations.
+- **GET /api/events**: Retrieve all events for the logged-in user.
+- **GET /api/invitations/:id**: Retrieve a specific invitation by ID.
 
-Nest is an MIT-licensed open source project. It can grow thanks to the sponsors and support by the amazing backers. If you'd like to join them, please [read more here](https://docs.nestjs.com/support).
+### Profiles
+- **POST /api/profiles/get**: Retrieve profiles by user IDs.
+- **GET /api/profiles**: Search profiles by part of a name.
 
-## Stay in touch
+### Stories
+- **GET /api/stories**: Retrieve all stories.
+- **GET /api/stories/:slug**: Retrieve a specific story by slug.
+- **GET /api/stories/:storySlug/:chapSlug**: Retrieve a specific chapter of a story.
 
-- Author - [Kamil Myśliwiec](https://kamilmysliwiec.com)
-- Website - [https://nestjs.com](https://nestjs.com/)
-- Twitter - [@nestframework](https://twitter.com/nestframework)
+## Contributing
+
+Contributions are welcome! Please follow these steps:
+
+1. Fork the repository.
+2. Create a new branch for your feature or bug fix.
+3. Commit your changes with clear and descriptive messages.
+4. Push your changes to your fork.
+5. Submit a pull request.
 
 ## License
 
-Nest is [MIT licensed](LICENSE).
+This project is licensed under the MIT License. See the [LICENSE](LICENSE) file for details.
