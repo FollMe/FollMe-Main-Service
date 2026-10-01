@@ -68,6 +68,21 @@ describe('createOne', () => {
     });
     expect(mailer.sendInBackground).toHaveBeenCalledTimes(1);
   });
+
+  it('keeps music, scratch-off and only the known fields of gift accounts', async () => {
+    const { service, saved } = setup();
+    const body: any = {
+      title: 'Cưới', location: 'Huế', startAt: '2027-01-10T10:00:00.000Z',
+      music: 'none', scratchDate: false,
+      gifts: [{ side: 'groom', bankBin: '970436', accountNumber: ' 0123456789 ', accountName: 'nguyen van minh', note: 'x' }],
+    };
+    await service.createOne(body, HOST, 'host@example.com');
+    expect(saved[0]).toMatchObject({
+      music: 'none',
+      scratchDate: false,
+      gifts: [{ side: 'groom', bankBin: '970436', accountNumber: '0123456789', accountName: 'NGUYEN VAN MINH' }],
+    });
+  });
 });
 
 describe('RSVP', () => {
@@ -151,6 +166,34 @@ describe('summarize', () => {
 });
 
 describe('CreateInvitationDTO', () => {
+  const base = { title: 'T', location: 'L', startAt: '2027-01-01T00:00:00Z' };
+
+  it('accepts up to two valid gift accounts', async () => {
+    const ok = plainToInstance(CreateInvitationDTO, {
+      ...base, music: 'canon', scratchDate: true,
+      gifts: [
+        { side: 'groom', bankBin: '970436', accountNumber: '0123456789', accountName: 'NGUYEN VAN MINH' },
+        { side: 'bride', bankBin: '970407', accountNumber: '19031234567890' },
+      ],
+    });
+    expect(await validate(ok)).toEqual([]);
+  });
+
+  it('rejects bad gift accounts, a third account and unknown music', async () => {
+    const gift = { side: 'groom', bankBin: '970436', accountNumber: '0123456789' };
+    const cases = [
+      { gifts: [{ ...gift, bankBin: 'VCB' }] },
+      { gifts: [{ ...gift, accountNumber: '12 34' }] },
+      { gifts: [{ ...gift, side: 'friend' }] },
+      { gifts: [gift, gift, gift] },
+      { music: 'rock' },
+    ];
+    for (const extra of cases) {
+      const dto = plainToInstance(CreateInvitationDTO, { ...base, ...extra });
+      expect((await validate(dto)).length).toBeGreaterThan(0);
+    }
+  });
+
   it('caps the guest list and guest names', async () => {
     const base = { title: 'T', location: 'L', startAt: '2027-01-01T00:00:00Z' };
     const many = plainToInstance(CreateInvitationDTO, { ...base, guests: Array.from({ length: 501 }, () => ({ name: 'A' })) });

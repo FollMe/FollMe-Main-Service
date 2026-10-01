@@ -11,6 +11,7 @@ import Handlebars from 'handlebars';
 import { CreateInvitationDTO } from './dtos/createInvitation.dto';
 import { UpdateInvitationDTO } from './dtos/updateInvitation.dto';
 import { GuestDTO } from './dtos/guest.dto';
+import { GiftDTO } from './dtos/gift.dto';
 import { PublicRsvpDTO, RsvpDTO } from './dtos/rsvp.dto';
 import { WishDTO } from './dtos/wish.dto';
 import { MAX_WISHES_SHOWN } from './invitation.constants';
@@ -19,22 +20,36 @@ const templateStr = fs.readFileSync(path.resolve(process.cwd(), 'src/templates/s
 const template = Handlebars.compile(templateStr);
 
 // Fields of an event that guests may see (no host id, no counters).
-const PUBLIC_EVENT_FIELDS = '_id title location mapLocation startAt type theme groomName brideName message allowPublicLink';
+const PUBLIC_EVENT_FIELDS = '_id title location mapLocation startAt type theme groomName brideName message allowPublicLink music scratchDate gifts';
 // Fields the host can set, picked explicitly from request bodies.
 const EDITABLE_FIELDS = [
   'title', 'location', 'mapLocation', 'startAt', 'type', 'theme',
-  'groomName', 'brideName', 'message', 'allowPublicLink',
+  'groomName', 'brideName', 'message', 'allowPublicLink', 'music', 'scratchDate', 'gifts',
 ] as const;
 
 function pickEditable(body: CreateInvitationDTO | UpdateInvitationDTO) {
   const out: Record<string, unknown> = {};
   for (const key of EDITABLE_FIELDS) {
     const value = body[key];
-    if (value !== undefined) {
+    if (key === 'gifts') {
+      if (Array.isArray(value)) {
+        out.gifts = (value as GiftDTO[]).map(pickGift);
+      }
+    } else if (value !== undefined) {
       out[key] = typeof value === 'string' ? value.trim() : value;
     }
   }
   return out;
+}
+
+/** Only the known fields of a gift account, account name as banks print it. */
+function pickGift(gift: GiftDTO) {
+  return {
+    side: gift.side,
+    bankBin: gift.bankBin,
+    accountNumber: gift.accountNumber.trim(),
+    accountName: (gift.accountName ?? '').trim().toUpperCase(),
+  };
 }
 
 function assertObjectId(id: string) {

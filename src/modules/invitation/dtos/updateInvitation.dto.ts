@@ -1,7 +1,8 @@
 import { Type } from "class-transformer";
 import { IsNotEmpty, IsArray, ArrayMaxSize, IsOptional, IsDateString, IsIn, MaxLength, IsBoolean, ValidateNested } from "class-validator";
 import { GuestDTO } from "./guest.dto";
-import { EVENT_THEMES, EVENT_TYPES, MAX_GUESTS_PER_REQUEST } from "../invitation.constants";
+import { GiftDTO } from "./gift.dto";
+import { EVENT_MUSIC, EVENT_THEMES, EVENT_TYPES, MAX_GIFT_ACCOUNTS, MAX_GUESTS_PER_REQUEST } from "../invitation.constants";
 
 /** Every field is optional; only the given ones change. */
 export class UpdateInvitationDTO {
@@ -46,6 +47,24 @@ export class UpdateInvitationDTO {
   @IsOptional()
   @IsBoolean()
   allowPublicLink?: boolean;
+
+  /** Background music on the invitation. */
+  @IsOptional()
+  @IsIn(EVENT_MUSIC)
+  music?: string;
+
+  /** Hide the date on the cover under a scratch-off foil. */
+  @IsOptional()
+  @IsBoolean()
+  scratchDate?: boolean;
+
+  /** Bank accounts for wedding gifts; an empty list removes them. */
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(MAX_GIFT_ACCOUNTS)
+  @ValidateNested({ each: true })
+  @Type(() => GiftDTO)
+  gifts?: GiftDTO[];
 
   /** New guests to invite (emails are sent like on creation). */
   @IsOptional()
