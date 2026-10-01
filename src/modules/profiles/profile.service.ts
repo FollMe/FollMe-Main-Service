@@ -41,7 +41,9 @@ export class ProfileService {
         profile.slug = removeAccent(profile.name ?? profile.slEmail)
       );
 
-      this.cachedService.setJSON("profiles", allProfiles, CACHED_PROFILE_DURATION);
+      // Best effort, in the background: the answer does not depend on it.
+      this.cachedService.setJSON("profiles", allProfiles, CACHED_PROFILE_DURATION)
+        .catch(err => console.log('Caching profiles failed: ', err));
     }
 
     const matchedProfiles = [];

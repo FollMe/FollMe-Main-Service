@@ -18,8 +18,11 @@ export class GetUserInfoInterceptor implements NestInterceptor {
       if (!request.user) {
         const jwt = request.headers['authorization']
         if (jwt) {
-          const payload = this.jwtService.decode(jwt.replace('Bearer ', ''))
-          if (payload.sub) {
+          // Verify, not just decode: anyone can forge an unsigned payload.
+          const payload: any = this.jwtService.verify(jwt.replace('Bearer ', ''), {
+            secret: process.env.JWT_SECRET,
+          })
+          if (payload?.sub) {
             const user = await this.userModel.findOne({ _id: payload.sub });
             if (user) {
               request.user = user

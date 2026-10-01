@@ -1,5 +1,6 @@
 import * as path from 'path';
 import * as fs from 'fs';
+import { randomInt } from 'crypto';
 import { HttpException, HttpStatus, Injectable } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
@@ -12,6 +13,15 @@ import { MailerService } from 'src/sharedServices/mailer.service';
 import { CacheService } from 'src/sharedServices/cache.service';
 
 const CODE_DURATION = 5 * 60;
+// One code per email per minute: the endpoint is public and sends mail.
+const CODE_RESEND_COOLDOWN = 60;
+// Wrong guesses allowed before the code is thrown away.
+const MAX_CODE_ATTEMPTS = 5;
+
+/** Emails are compared case-insensitively and without stray spaces. */
+export function normalizeEmail(email: string) {
+    return String(email ?? '').trim().toLowerCase();
+}
 const templateStr = fs.readFileSync(path.resolve(process.cwd(), 'src/templates/sendCodeEmail.template.hbs')).toString('utf8')
 const template = Handlebars.compile(templateStr);
 
@@ -26,7 +36,8 @@ export class AuthService {
     ) { }
 
     async checkCredential(email: string, password: string) {
-        const user = await this.userModel.findOne({ email }).exec();
+        // Older accounts kept the email as typed; newer ones are lowercase.
+        const user = await this.userModel.findOne({ email: { $in: [email, normalizeEmail(email)] } }).exec();
 
         if (!user || !user.password) {
             return null;
@@ -90,7 +101,8 @@ export class AuthService {
         return user;
     }
 
-    async generateCertifyCode(email: string) {
+    async generateCertifyCode(rawEmail: string) {
+        const email = normalizeEmail(rawEmail);
 
         // Check whether exist account with this email
         const isExistUserWithEmail = await this.userModel.exists({ email }).exec();
@@ -98,9 +110,15 @@ export class AuthService {
             throw new HttpException("Email này đã được sử dụng", HttpStatus.BAD_REQUEST);
         }
 
+        const canSend = await this.cacheService.setIfAbsent(`certifyCodeSent:${email}`, 1, CODE_RESEND_COOLDOWN);
+        if (!canSend) {
+            throw new HttpException("Mã vừa được gửi, vui lòng kiểm tra email hoặc thử lại sau 1 phút", HttpStatus.TOO_MANY_REQUESTS);
+        }
+
         // Generate new code & save to redis
-        const code = Math.floor(100000 + Math.random() * 900000);
+        const code = randomInt(100000, 1000000);
         await this.cacheService.set(`certifyCodes:${email}`, code, CODE_DURATION);
+        await this.cacheService.del(false, `certifyCodeAttempts:${email}`);
 
         await this.mailerService.sendMail({
             from: '"FollMe " <follme.noreply@gmail.com>',
@@ -110,14 +128,27 @@ export class AuthService {
         })
     }
 
-    async signUp(credentials) {
-        const { email, code, password } = credentials;
+    async signUp(credentials: { email: string, code: string | number, password: string }) {
+        const email = normalizeEmail(credentials.email);
+        const code = String(credentials.code ?? '').trim();
         const cachedCode = await this.cacheService.get(`certifyCodes:${email}`);
-        if (!cachedCode || cachedCode != code) {
+        if (!cachedCode || cachedCode !== code) {
+            if (cachedCode) {
+                const attempts = await this.cacheService.incr(`certifyCodeAttempts:${email}`, CODE_DURATION);
+                if (attempts >= MAX_CODE_ATTEMPTS) {
+                    await this.cacheService.del(false, `certifyCodes:${email}`);
+                    throw new HttpException("Nhập sai quá nhiều lần, vui lòng lấy mã mới", HttpStatus.BAD_REQUEST);
+                }
+            }
             throw new HttpException("Mã xác thực không chính xác", HttpStatus.BAD_REQUEST);
         }
 
-        await this.userService.store(email, password);
+        // The email may have been taken (e.g. by Google sign-in) since the code was sent.
+        if (await this.userModel.exists({ email }).exec()) {
+            throw new HttpException("Email này đã được sử dụng", HttpStatus.BAD_REQUEST);
+        }
+
+        await this.userService.store(email, credentials.password);
         await this.cacheService.del(true, `certifyCodes:${email}`);
     }
 }

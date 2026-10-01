@@ -224,7 +224,7 @@ export class InvitationsService {
   private mailGuests(guestList: any[], slEmail: string) {
     guestList.forEach(guest => {
       if (guest.mail) {
-        this.mailerService.sendMail({
+        this.mailerService.sendInBackground({
           from: '"FollMe " <follme.noreply@gmail.com>',
           to: guest.mail,
           subject: '[FollMe.eCard] Thư mời sự kiện',
@@ -275,11 +275,15 @@ export class InvitationsService {
    */
   async rsvpPublic(eventId: string, body: PublicRsvpDTO) {
     assertObjectId(eventId);
+    const name = body.name?.trim();
+    if (!name) {
+      throw new BadRequestException('Vui lòng nhập tên của bạn');
+    }
     this.assertNotOver(await this.liveEvent(eventId, { publicOnly: true }));
     const rsvp = toRsvp(body);
     const guest = await this.guestModel.create({
       event: eventId,
-      name: body.name.trim(),
+      name,
       source: 'public',
       rsvp,
     });
@@ -307,7 +311,11 @@ export class InvitationsService {
   }
 
   private async saveWish(eventId: unknown, name: string, message: string, guestId?: unknown) {
-    const wish = await this.wishModel.create({ event: eventId, guest: guestId, name, message: message.trim() });
+    const text = message.trim();
+    if (!text) {
+      throw new BadRequestException('Vui lòng nhập lời chúc');
+    }
+    const wish = await this.wishModel.create({ event: eventId, guest: guestId, name, message: text });
     return { _id: wish._id, name: wish.name, message: wish.message, createdAt: (wish as any).createdAt };
   }
 

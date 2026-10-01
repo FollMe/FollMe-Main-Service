@@ -32,7 +32,7 @@ export class AllExceptionsFilter implements ExceptionFilter {
     const responseBody = {
       meta: {
         ok: false,
-        message: mappingErrorMessages(httpStatus, exception.message)
+        message: mappingErrorMessages(httpStatus, messageOf(exception))
       }
     };
 
@@ -40,7 +40,25 @@ export class AllExceptionsFilter implements ExceptionFilter {
   }
 }
 
-function mappingErrorMessages(httpStatus, message) {
+/**
+ * The message to show. ValidationPipe errors carry their messages in an
+ * array on the response, while `exception.message` is just
+ * "Bad Request Exception".
+ */
+export function messageOf(exception: any): string {
+  if (exception instanceof HttpException) {
+    const res: any = exception.getResponse();
+    if (Array.isArray(res?.message) && res.message.length > 0) {
+      return String(res.message[0]);
+    }
+    if (typeof res?.message === 'string') {
+      return res.message;
+    }
+  }
+  return exception?.message;
+}
+
+export function mappingErrorMessages(httpStatus, message) {
   if (httpStatus === HttpStatus.INTERNAL_SERVER_ERROR) {
     return 'Xảy ra lỗi, vui lòng thử lại!';
   }

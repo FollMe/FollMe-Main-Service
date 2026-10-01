@@ -12,7 +12,9 @@ export class CacheService implements OnModuleInit {
   private port = process.env.REDIS_PORT;
 
   public async onModuleInit() {
-    this.init();
+    // Callers check isReady and degrade without Redis; a failed first
+    // connect must not reject unhandled and stop the app.
+    this.init().catch(err => console.log('Redis Client Error: ', err));
   }
 
   private async init() {
@@ -32,6 +34,27 @@ export class CacheService implements OnModuleInit {
     })
   }
 
+  /** Sets the key only if it does not exist yet; true if it was set. */
+  public async setIfAbsent(key: RedisCommandArgument, value: number | RedisCommandArgument, duration: number): Promise<boolean> {
+    if (!this.redis?.isReady) {
+      throw new Error("Cannot connect to Redis Cloud!");
+    }
+    const res = await this.redis.set(key, value, { EX: duration, NX: true });
+    return res === 'OK';
+  }
+
+  /** Increments a counter that expires `duration` seconds after creation. */
+  public async incr(key: RedisCommandArgument, duration: number): Promise<number> {
+    if (!this.redis?.isReady) {
+      throw new Error("Cannot connect to Redis Cloud!");
+    }
+    const n = await this.redis.incr(key);
+    if (n === 1) {
+      await this.redis.expire(key, duration);
+    }
+    return n;
+  }
+
   public get(key: RedisCommandArgument): Promise<string> {
     if (!this.redis?.isReady) {
       throw new Error("Cannot connect to Redis Cloud!");
@@ -46,8 +69,8 @@ export class CacheService implements OnModuleInit {
     }
 
     const result = await this.redis.json.set(key, '$', value)
-    this.redis.expire(key, duration);
-    return Promise.resolve(result);
+    await this.redis.expire(key, duration);
+    return result;
   }
 
   public getJSON(key: string) {
