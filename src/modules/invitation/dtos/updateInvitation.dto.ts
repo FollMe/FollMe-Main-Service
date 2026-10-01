@@ -3,21 +3,25 @@ import { IsNotEmpty, IsArray, IsOptional, IsDateString, IsIn, MaxLength, IsBoole
 import { GuestDTO } from "./guest.dto";
 import { EVENT_THEMES, EVENT_TYPES } from "../invitation.constants";
 
-export class CreateInvitationDTO {
+/** Every field is optional; only the given ones change. */
+export class UpdateInvitationDTO {
+  @IsOptional()
   @IsNotEmpty()
   @MaxLength(150)
-  title: string;
+  title?: string;
 
+  @IsOptional()
   @IsNotEmpty()
   @MaxLength(300)
-  location: string;
+  location?: string;
 
   @IsOptional()
   @MaxLength(1000)
-  mapLocation: string;
+  mapLocation?: string;
 
+  @IsOptional()
   @IsDateString()
-  startAt: string;
+  startAt?: string;
 
   @IsOptional()
   @IsIn(EVENT_TYPES)
@@ -43,9 +47,10 @@ export class CreateInvitationDTO {
   @IsBoolean()
   allowPublicLink?: boolean;
 
+  /** New guests to invite (emails are sent like on creation). */
   @IsOptional()
   @IsArray()
   @ValidateNested({ each: true })
   @Type(() => GuestDTO)
-  guests: GuestDTO[];
+  addGuests?: GuestDTO[];
 }

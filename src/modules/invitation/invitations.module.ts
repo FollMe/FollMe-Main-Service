@@ -4,6 +4,7 @@ import { InvitationsService } from './invitations.service';
 import { MongooseModule } from '@nestjs/mongoose';
 import { Event, EventSchema } from './schemas/event.schema';
 import { Guest, GuestSchema } from './schemas/guest.schema';
+import { Wish, WishSchema } from './schemas/wish.schema';
 import { MailerService } from 'src/sharedServices/mailer.service';
 
 @Module({
@@ -27,6 +28,10 @@ import { MailerService } from 'src/sharedServices/mailer.service';
           schema.plugin(require('mongoose-slug-updater'));
           return schema;
         },
+      },
+      {
+        name: Wish.name,
+        useFactory: () => WishSchema,
       }
     ]),
   ]
