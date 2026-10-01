@@ -15,7 +15,9 @@ export const BlogSchema = new Schema({
     thumbnail: { link: String, public_id: String },
     content: { type: String, require: true },
     author: { type: Schema.Types.ObjectId, ref: 'User' },
-    slug: { type: String, slug: "title", unique: true, require: true },
+    // Permanent: comments, reactions and shared links are keyed by the slug,
+    // so renaming a blog must not change it.
+    slug: { type: String, slug: "title", unique: true, require: true, permanent: true },
     viewed: { type: Number, require: true, default: 0 },
     isDeleted: { type: Boolean, default: false }
 }, {
