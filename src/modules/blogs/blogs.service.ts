@@ -63,6 +63,20 @@ export class BlogsService {
     return blog;
   }
 
+  /** Title, excerpt and cover for link previews; does not count a view. */
+  async preview(slug: string) {
+    const blog: any = await this.blogModel.findOne({ slug, isDeleted: { $ne: true } }).select('title content thumbnail');
+    if (!blog) {
+      throw new NotFoundException();
+    }
+    const text = String(blog.content ?? '').replace(/<[^>]*>/g, ' ').replace(/&nbsp;/g, ' ').replace(/\s+/g, ' ').trim();
+    return {
+      title: blog.title,
+      description: text.length > 160 ? `${text.slice(0, 159).trimEnd()}…` : text,
+      image: blog.thumbnail?.link,
+    };
+  }
+
   /**
    * Returns a live blog of the given author, without counting a view.
    * Throws 404 if it does not exist and 403 if someone else wrote it.

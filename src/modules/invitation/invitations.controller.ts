@@ -73,6 +73,11 @@ export class invitationsController {
     return { invitation };
   }
 
+  @Get('invitations/:id/preview')
+  async guestPreview(@Param('id') id: string) {
+    return await this.invitationsService.preview('guest', id);
+  }
+
   @Put('invitations/:id/rsvp')
   async rsvp(@Param('id') id: string, @Body() body: RsvpDTO) {
     return await this.invitationsService.rsvpGuest(id, body);
@@ -88,6 +93,11 @@ export class invitationsController {
   @Get('events/:id/public')
   async getPublic(@Param('id') id: string) {
     return await this.invitationsService.findPublic(id);
+  }
+
+  @Get('events/:id/preview')
+  async eventPreview(@Param('id') id: string) {
+    return await this.invitationsService.preview('event', id);
   }
 
   @Post('events/:id/public/rsvp')

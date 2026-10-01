@@ -63,6 +63,11 @@ export class BlogsController {
     return { blog };
   }
 
+  @Get('/:slug/preview')
+  async getPreview(@Param('slug') slug: string) {
+    return await this.blogsService.preview(slug);
+  }
+
   /** The author's own blog, for the editor. Does not count a view. */
   @Get('/:slug/edit')
   @UseGuards(AuthGuard("jwt"))

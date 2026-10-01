@@ -150,3 +150,35 @@ describe('CreateInvitationDTO', () => {
     expect((await validate(dto)).map(e => e.property).sort()).toEqual(['theme', 'type']);
   });
 });
+
+describe('preview', () => {
+  const wedding = {
+    _id: EVENT, type: 'wedding', groomName: 'Minh', brideName: 'Lan', title: 'Lễ thành hôn',
+    startAt: new Date('2027-02-06T04:00:00Z'), location: 'Hà Nội',
+  };
+
+  it('describes a personal invitation without counting a view', async () => {
+    const { service, guestModel, eventModel } = setup({ guest: { _id: GUEST, name: 'Anh Tuấn', event: wedding } as any });
+    const res = await service.preview('guest', GUEST);
+    expect(res).toEqual({
+      title: 'Thiệp cưới Minh & Lan',
+      description: 'Trân trọng kính mời Anh Tuấn. · 11:00 thứ Bảy, 6/2/2027 · Hà Nội',
+      type: 'wedding',
+    });
+    expect(guestModel.findOne).toHaveBeenCalled();
+    expect(eventModel.findOneAndUpdate).not.toHaveBeenCalled();
+  });
+
+  it('only previews public events that allow it', async () => {
+    const { service, eventModel } = setup({ event: null });
+    await expect(service.preview('event', EVENT)).rejects.toBeInstanceOf(NotFoundException);
+    expect(eventModel.findOne).toHaveBeenCalledWith(expect.objectContaining({ allowPublicLink: true }));
+  });
+
+  it('falls back to the title for other events', async () => {
+    const { service } = setup({ event: { _id: EVENT, type: 'birthday', title: 'Sinh nhật Vy', location: 'Q1' } as any });
+    const res = await service.preview('event', EVENT);
+    expect(res.title).toBe('Thiệp mời: Sinh nhật Vy');
+    expect(res.description).toBe('Q1');
+  });
+});

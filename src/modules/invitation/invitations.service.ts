@@ -130,6 +130,37 @@ export class InvitationsService {
     return { event, wishes: await this.visibleWishes(eventId) };
   }
 
+  /**
+   * Title and description for link previews (Zalo, Facebook...). Read-only:
+   * crawlers must not count as views.
+   */
+  async preview(kind: 'guest' | 'event', id: string) {
+    assertObjectId(id);
+    let event: any;
+    let guestName = '';
+    if (kind === 'guest') {
+      const guest: any = await this.guestModel.findOne({ _id: id, isDeleted: { $ne: true } })
+        .select('name event')
+        .populate('event', PUBLIC_EVENT_FIELDS + ' isDeleted');
+      event = guest?.event;
+      guestName = guest?.name ?? '';
+    } else {
+      event = await this.eventModel.findOne({ _id: id, isDeleted: { $ne: true }, allowPublicLink: true })
+        .select(PUBLIC_EVENT_FIELDS);
+    }
+    if (!event || event.isDeleted) {
+      throw new NotFoundException();
+    }
+    const couple = ['wedding', 'engagement'].includes(event.type) && event.groomName && event.brideName;
+    const headline = couple ? `${event.groomName} & ${event.brideName}` : event.title;
+    const when = event.startAt ? formatViDate(new Date(event.startAt)) : '';
+    return {
+      title: couple ? `Thiệp ${event.type === 'wedding' ? 'cưới' : 'ăn hỏi'} ${headline}` : `Thiệp mời: ${headline}`,
+      description: [guestName && `Trân trọng kính mời ${guestName}.`, when, event.location].filter(Boolean).join(' · '),
+      type: event.type,
+    };
+  }
+
   private visibleWishes(eventId: string) {
     return this.wishModel.find({ event: eventId, isHidden: { $ne: true } })
       .sort({ createdAt: -1 })
@@ -293,6 +324,15 @@ export class InvitationsService {
     }
     return { _id: wishId, isHidden };
   }
+}
+
+/** "11:00 thứ Bảy, 6/2/2027" in Vietnam time. */
+export function formatViDate(date: Date) {
+  const vn = new Date(date.getTime() + 7 * 3600 * 1000);
+  const days = ['Chủ Nhật', 'thứ Hai', 'thứ Ba', 'thứ Tư', 'thứ Năm', 'thứ Sáu', 'thứ Bảy'];
+  const hh = String(vn.getUTCHours()).padStart(2, '0');
+  const mm = String(vn.getUTCMinutes()).padStart(2, '0');
+  return `${hh}:${mm} ${days[vn.getUTCDay()]}, ${vn.getUTCDate()}/${vn.getUTCMonth() + 1}/${vn.getUTCFullYear()}`;
 }
 
 function toRsvp(body: RsvpDTO) {
