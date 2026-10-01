@@ -1,10 +1,11 @@
-import { Injectable, NestInterceptor, ExecutionContext, CallHandler } from '@nestjs/common';
+import { Injectable, NestInterceptor, ExecutionContext, CallHandler, Logger } from '@nestjs/common';
 import { Observable, tap } from 'rxjs';
 import { LogService } from '../modules/logsConfig/logs.service';
 import { getRequestIdentity } from 'src/utils/requestHepler';
 
 @Injectable()
 export class LoggingInterceptor implements NestInterceptor {
+  private readonly logger = new Logger(LoggingInterceptor.name);
   constructor(private logService: LogService) { }
 
   intercept(context: ExecutionContext, next: CallHandler): Observable<any> {
@@ -18,6 +19,9 @@ export class LoggingInterceptor implements NestInterceptor {
             slEmail: request.user?.slEmail,
             responseCode: context.switchToHttp().getResponse().statusCode,
             ...getRequestIdentity(request)
+          }).catch(err => {
+            // Losing an access log must not fail, or crash, the request.
+            this.logger.warn(`Writing access log failed: ${err?.message ?? err}`);
           })
         }
       }));

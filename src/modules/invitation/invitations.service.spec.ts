@@ -46,7 +46,7 @@ function setup({ event = { _id: EVENT, startAt: new Date(Date.now() + 86400000) 
   };
   const session = { startTransaction: jest.fn(), commitTransaction: jest.fn(), abortTransaction: jest.fn(), endSession: jest.fn() };
   const connection: any = { startSession: jest.fn(async () => session) };
-  const mailer: any = { sendMail: jest.fn() };
+  const mailer: any = { sendInBackground: jest.fn() };
   const service = new InvitationsService(eventModel, guestModel, wishModel, connection, mailer);
   return { service, eventModel, guestModel, wishModel, mailer, saved };
 }
@@ -66,7 +66,7 @@ describe('createOne', () => {
       type: 'wedding', theme: 'blush', groomName: 'Minh', brideName: 'Lan', allowPublicLink: true,
       host: HOST,
     });
-    expect(mailer.sendMail).toHaveBeenCalledTimes(1);
+    expect(mailer.sendInBackground).toHaveBeenCalledTimes(1);
   });
 });
 
@@ -124,6 +124,12 @@ describe('wishes', () => {
     expect(wishModel.create).not.toHaveBeenCalled();
   });
 
+  it('refuses a wish that is only spaces', async () => {
+    const { service, wishModel } = setup();
+    await expect(service.wishFromGuest(GUEST, { message: '   ' })).rejects.toBeInstanceOf(BadRequestException);
+    expect(wishModel.create).not.toHaveBeenCalled();
+  });
+
   it('only the host can hide a wish', async () => {
     const { service, wishModel } = setup({ event: null });
     await expect(service.setWishHidden(EVENT, '64b0000000000000000000f1', 'someone', true)).rejects.toBeInstanceOf(NotFoundException);
@@ -145,6 +151,14 @@ describe('summarize', () => {
 });
 
 describe('CreateInvitationDTO', () => {
+  it('caps the guest list and guest names', async () => {
+    const base = { title: 'T', location: 'L', startAt: '2027-01-01T00:00:00Z' };
+    const many = plainToInstance(CreateInvitationDTO, { ...base, guests: Array.from({ length: 501 }, () => ({ name: 'A' })) });
+    expect((await validate(many)).map(e => e.property)).toEqual(['guests']);
+    const longName = plainToInstance(CreateInvitationDTO, { ...base, guests: [{ name: 'A'.repeat(101) }] });
+    expect((await validate(longName)).map(e => e.property)).toEqual(['guests']);
+  });
+
   it('rejects unknown types and themes', async () => {
     const dto = plainToInstance(CreateInvitationDTO, { title: 'T', location: 'L', startAt: '2027-01-01T00:00:00Z', type: 'funeral', theme: 'neon' });
     expect((await validate(dto)).map(e => e.property).sort()).toEqual(['theme', 'type']);

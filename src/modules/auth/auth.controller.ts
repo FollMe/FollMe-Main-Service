@@ -1,7 +1,8 @@
-import { Controller, Get, Post, Request, UseGuards, Response } from '@nestjs/common';
+import { Body, Controller, Get, Post, Request, UseGuards, Response } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { AuthGuard } from '@nestjs/passport';
 import { AuthService } from './auth.service';
+import { RequestCodeDTO, SignUpDTO } from './dtos/signUp.dto';
 
 function filterPublicField(user) {
     return  {
@@ -62,16 +63,14 @@ export class AuthController {
     }
 
     @Post('code')
-    async getCertifyCode(@Request() req): Promise<any> {
-        const email = req.body.email;
-        await this.authService.generateCertifyCode(email);
+    async getCertifyCode(@Body() body: RequestCodeDTO): Promise<any> {
+        await this.authService.generateCertifyCode(body.email);
         return;
     }
 
     @Post('sign-up')
-    async localSignUp(@Request() req): Promise<any> {
-        const credentials = req.body;
-        await this.authService.signUp(credentials);
+    async localSignUp(@Body() body: SignUpDTO): Promise<any> {
+        await this.authService.signUp(body);
         return;
     }
 

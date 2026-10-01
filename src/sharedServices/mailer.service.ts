@@ -1,8 +1,9 @@
-import { Injectable } from "@nestjs/common";
+import { Injectable, Logger } from "@nestjs/common";
 import * as nodemailer from "nodemailer";
 
 @Injectable()
 export class MailerService {
+  private readonly logger = new Logger(MailerService.name);
   private transporter: nodemailer.Transporter;
 
   constructor() {
@@ -20,5 +21,15 @@ export class MailerService {
   async sendMail(options) {
     // send mail with defined transport object
     await this.transporter.sendMail(options);
+  }
+
+  /**
+   * Sends without making the caller wait. A failure is logged, never thrown:
+   * an unhandled rejection would take the whole process down.
+   */
+  sendInBackground(options): void {
+    this.sendMail(options).catch(err => {
+      this.logger.error(`Sending mail to ${options?.to} failed: ${err?.message ?? err}`);
+    });
   }
 }
