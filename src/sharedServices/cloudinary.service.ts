@@ -28,4 +28,8 @@ export class CloudinaryService {
             Readable.from(file.buffer).pipe(upload);
         });
     }
+
+    async destroy(publicId: string) {
+        return this.v2.uploader.destroy(publicId);
+    }
 }

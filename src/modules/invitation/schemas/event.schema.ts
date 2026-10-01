@@ -18,7 +18,18 @@ export class Event {
   music?: string;
   scratchDate?: boolean;
   gifts?: Gift[];
+  photos?: Photo[];
+  screenKey?: string;
   guest: any;
+}
+
+/** A wedding photo on Cloudinary. The first one is the cover. */
+export class Photo {
+  _id?: unknown;
+  url: string;
+  publicId: string;
+  width: number;
+  height: number;
 }
 
 export class Gift {
@@ -34,6 +45,13 @@ const GiftSchema = new Schema({
   accountNumber: { type: String, required: true },
   accountName: { type: String, default: '' },
 }, { _id: false });
+
+const PhotoSchema = new Schema({
+  url: { type: String, required: true },
+  publicId: { type: String, required: true },
+  width: { type: Number },
+  height: { type: Number },
+});
 
 export const EventSchema = new Schema({
   title: { type: String, require: true },
@@ -55,6 +73,10 @@ export const EventSchema = new Schema({
   music: { type: String, enum: EVENT_MUSIC },
   scratchDate: { type: Boolean },
   gifts: { type: [GiftSchema], default: undefined },
+  photos: { type: [PhotoSchema], default: undefined },
+  // Secret part of the venue screen link (shown on a TV at the party, run
+  // by whoever the host sends the link to). Never sent to guests.
+  screenKey: { type: String, select: false },
 }, {
   timestamps: true,
   toJSON: { virtuals: true },

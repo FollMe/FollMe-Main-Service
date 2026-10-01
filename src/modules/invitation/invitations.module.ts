@@ -6,10 +6,11 @@ import { Event, EventSchema } from './schemas/event.schema';
 import { Guest, GuestSchema } from './schemas/guest.schema';
 import { Wish, WishSchema } from './schemas/wish.schema';
 import { MailerService } from 'src/sharedServices/mailer.service';
+import { CloudinaryService } from 'src/sharedServices/cloudinary.service';
 
 @Module({
   controllers: [invitationsController],
-  providers: [InvitationsService, MailerService],
+  providers: [InvitationsService, MailerService, CloudinaryService],
   exports: [InvitationsService, MailerService],
   imports: [
     MongooseModule.forFeatureAsync([

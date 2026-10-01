@@ -65,6 +65,10 @@ export function mappingErrorMessages(httpStatus, message) {
   if (message === 'Unauthorized') {
     return 'Vui lòng đăng nhập!'
   }
+  // Multer's limit on uploaded files
+  if (message === 'File too large') {
+    return 'Ảnh quá lớn, vui lòng chọn ảnh khác!';
+  }
 
   return message;
 }

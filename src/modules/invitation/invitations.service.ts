@@ -1,5 +1,6 @@
 import * as path from 'path';
 import * as fs from 'fs';
+import { randomBytes } from 'crypto';
 import { BadRequestException, HttpException, HttpStatus, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectModel, InjectConnection } from '@nestjs/mongoose';
 import { Event, EventDocument } from './schemas/event.schema';
@@ -7,6 +8,7 @@ import { Guest, GuestDocument } from './schemas/guest.schema';
 import { Wish, WishDocument } from './schemas/wish.schema';
 import * as mongoose from 'mongoose';
 import { MailerService } from 'src/sharedServices/mailer.service';
+import { CloudinaryService } from 'src/sharedServices/cloudinary.service';
 import Handlebars from 'handlebars';
 import { CreateInvitationDTO } from './dtos/createInvitation.dto';
 import { UpdateInvitationDTO } from './dtos/updateInvitation.dto';
@@ -14,13 +16,13 @@ import { GuestDTO } from './dtos/guest.dto';
 import { GiftDTO } from './dtos/gift.dto';
 import { PublicRsvpDTO, RsvpDTO } from './dtos/rsvp.dto';
 import { WishDTO } from './dtos/wish.dto';
-import { MAX_WISHES_SHOWN } from './invitation.constants';
+import { MAX_PHOTOS, MAX_WISHES_SHOWN } from './invitation.constants';
 
 const templateStr = fs.readFileSync(path.resolve(process.cwd(), 'src/templates/sendInvitation.template.hbs')).toString('utf8')
 const template = Handlebars.compile(templateStr);
 
 // Fields of an event that guests may see (no host id, no counters).
-const PUBLIC_EVENT_FIELDS = '_id title location mapLocation startAt type theme groomName brideName message allowPublicLink music scratchDate gifts';
+const PUBLIC_EVENT_FIELDS = '_id title location mapLocation startAt type theme groomName brideName message allowPublicLink music scratchDate gifts photos';
 // Fields the host can set, picked explicitly from request bodies.
 const EDITABLE_FIELDS = [
   'title', 'location', 'mapLocation', 'startAt', 'type', 'theme',
@@ -71,6 +73,7 @@ export class InvitationsService {
     @InjectConnection()
     private readonly connection: mongoose.Connection,
     private readonly mailerService: MailerService,
+    private readonly cloudinaryService: CloudinaryService,
   ) { }
 
   async getList(userId: string, page: number = 1) {
@@ -173,6 +176,7 @@ export class InvitationsService {
       title: couple ? `Thiệp ${event.type === 'wedding' ? 'cưới' : 'ăn hỏi'} ${headline}` : `Thiệp mời: ${headline}`,
       description: [guestName && `Trân trọng kính mời ${guestName}.`, when, event.location].filter(Boolean).join(' · '),
       type: event.type,
+      image: ogImage(event.photos?.[0]?.url),
     };
   }
 
@@ -334,6 +338,149 @@ export class InvitationsService {
     return { _id: wish._id, name: wish.name, message: wish.message, createdAt: (wish as any).createdAt };
   }
 
+  // ---------- Photos ----------
+
+  private async hostEvent(eventId: string, userId: string, fields: string) {
+    assertObjectId(eventId);
+    const event = await this.eventModel.findOne({ _id: eventId, host: userId, isDeleted: { $ne: true } }).select(fields);
+    if (!event) {
+      throw new NotFoundException();
+    }
+    return event as any;
+  }
+
+  /** Uploads a photo to the end of the album (the first one is the cover). */
+  async addPhoto(eventId: string, userId: string, file: Express.Multer.File) {
+    const event = await this.hostEvent(eventId, userId, '_id photos');
+    if ((event.photos?.length ?? 0) >= MAX_PHOTOS) {
+      throw new BadRequestException(`Mỗi thiệp có tối đa ${MAX_PHOTOS} ảnh`);
+    }
+    const uploaded: any = await this.cloudinaryService.uploadImage(file, `FollMe/events/${eventId}`);
+    const photo = {
+      _id: new mongoose.Types.ObjectId(),
+      url: uploaded.secure_url,
+      publicId: uploaded.public_id,
+      width: uploaded.width,
+      height: uploaded.height,
+    };
+    // Re-checks the limit: another upload may have finished meanwhile.
+    const res = await this.eventModel.updateOne(
+      { _id: eventId, host: userId, isDeleted: { $ne: true }, [`photos.${MAX_PHOTOS - 1}`]: { $exists: false } },
+      { $push: { photos: photo } },
+    );
+    if (!res.modifiedCount) {
+      this.destroyPhoto(photo.publicId);
+      throw new BadRequestException(`Mỗi thiệp có tối đa ${MAX_PHOTOS} ảnh`);
+    }
+    return photo;
+  }
+
+  async removePhoto(eventId: string, photoId: string, userId: string) {
+    assertObjectId(eventId);
+    assertObjectId(photoId);
+    // Returns the event as it was, so the removed photo can be found.
+    const event: any = await this.eventModel.findOneAndUpdate(
+      { _id: eventId, host: userId, isDeleted: { $ne: true }, 'photos._id': photoId },
+      { $pull: { photos: { _id: photoId } } },
+    ).select('photos');
+    const photo = event?.photos?.find(p => String(p._id) === photoId);
+    if (!photo) {
+      throw new NotFoundException();
+    }
+    this.destroyPhoto(photo.publicId);
+    return { _id: photoId };
+  }
+
+  /** Puts the album in the given order; `order` lists every photo id once. */
+  async orderPhotos(eventId: string, userId: string, order: string[]) {
+    const event = await this.hostEvent(eventId, userId, '_id photos');
+    const photos: any[] = event.photos ?? [];
+    const byId = new Map(photos.map(p => [String(p._id), p]));
+    const sameSet = order.length === photos.length
+      && new Set(order).size === order.length
+      && order.every(id => byId.has(id));
+    if (!sameSet) {
+      throw new BadRequestException('Album vừa thay đổi, vui lòng tải lại trang rồi thử lại');
+    }
+    // Only if no photo was added or removed since it was read.
+    const res = await this.eventModel.updateOne(
+      { _id: eventId, host: userId, isDeleted: { $ne: true }, photos: { $size: photos.length } },
+      { $set: { photos: order.map(id => byId.get(id)) } },
+    );
+    if (!res.matchedCount) {
+      throw new BadRequestException('Album vừa thay đổi, vui lòng tải lại trang rồi thử lại');
+    }
+    return { order };
+  }
+
+  private destroyPhoto(publicId: string) {
+    this.cloudinaryService.destroy(publicId).catch(err => {
+      console.error(`Could not delete photo ${publicId} from Cloudinary`, err);
+    });
+  }
+
+  // ---------- Venue screen ----------
+
+  /**
+   * The secret key of the event's venue screen link, made on first use.
+   * `rotate` makes a new one, so the old link stops working.
+   */
+  async screenKey(eventId: string, userId: string, rotate = false) {
+    const event = await this.hostEvent(eventId, userId, '_id +screenKey');
+    const filter = { _id: eventId, host: userId, isDeleted: { $ne: true } };
+    if (event.screenKey && !rotate) {
+      return { key: event.screenKey };
+    }
+    const key = randomBytes(16).toString('hex');
+    if (rotate) {
+      await this.eventModel.updateOne(filter, { $set: { screenKey: key } });
+      return { key };
+    }
+    // Two first requests at once must agree on one key.
+    await this.eventModel.updateOne({ ...filter, screenKey: { $exists: false } }, { $set: { screenKey: key } });
+    const saved: any = await this.eventModel.findOne(filter).select('+screenKey');
+    return { key: saved?.screenKey ?? key };
+  }
+
+  /**
+   * What the venue screen shows. Without `since`: the event and the latest
+   * wishes. With it: wishes added, hidden or shown again since then, to poll.
+   * `cursor` is the `since` of the next poll.
+   */
+  async screen(eventId: string, key: string, since?: string) {
+    assertObjectId(eventId);
+    if (!/^[a-f0-9]{32}$/.test(key ?? '')) {
+      throw new NotFoundException();
+    }
+    let sinceDate: Date | undefined;
+    if (since) {
+      sinceDate = new Date(since);
+      if (Number.isNaN(sinceDate.getTime())) {
+        throw new BadRequestException('since không hợp lệ');
+      }
+    }
+    // A wish saved just before the query may be committed just after it;
+    // overlapping polls catch it, and the screen drops repeats by id.
+    const cursor = new Date(Date.now() - SCREEN_POLL_OVERLAP_MS).toISOString();
+    if (!sinceDate) {
+      const event = await this.eventModel.findOne({ _id: eventId, isDeleted: { $ne: true }, screenKey: key })
+        .select(PUBLIC_EVENT_FIELDS);
+      if (!event) {
+        throw new NotFoundException();
+      }
+      return { event, wishes: await this.visibleWishes(eventId), cursor };
+    }
+    const event = await this.eventModel.findOne({ _id: eventId, isDeleted: { $ne: true }, screenKey: key }).select('_id');
+    if (!event) {
+      throw new NotFoundException();
+    }
+    const wishes = await this.wishModel.find({ event: eventId, updatedAt: { $gte: sinceDate } })
+      .sort({ updatedAt: 1 })
+      .limit(MAX_WISHES_SHOWN)
+      .select('_id name message isHidden createdAt');
+    return { wishes, cursor };
+  }
+
   async setWishHidden(eventId: string, wishId: string, userId: string, isHidden: boolean) {
     assertObjectId(eventId);
     assertObjectId(wishId);
@@ -347,6 +494,19 @@ export class InvitationsService {
     }
     return { _id: wishId, isHidden };
   }
+}
+
+const SCREEN_POLL_OVERLAP_MS = 5000;
+
+/**
+ * A Cloudinary photo cropped to the 1200x630 link preview size, keeping
+ * faces in frame. Undefined for anything that is not a Cloudinary upload.
+ */
+export function ogImage(url?: string) {
+  if (!url || !url.includes('/image/upload/')) {
+    return undefined;
+  }
+  return url.replace('/image/upload/', '/image/upload/c_fill,g_faces,w_1200,h_630,q_auto,f_jpg/');
 }
 
 /** "11:00 thứ Bảy, 6/2/2027" in Vietnam time. */

@@ -8,3 +8,5 @@ export const MAX_GUESTS_PER_REQUEST = 500;
 export const EVENT_MUSIC = ['none', 'canon'] as const;
 export const GIFT_SIDES = ['groom', 'bride', 'host'] as const;
 export const MAX_GIFT_ACCOUNTS = 2;
+export const MAX_PHOTOS = 12;
+export const MAX_PHOTO_BYTES = 6 * 1024 * 1024;
