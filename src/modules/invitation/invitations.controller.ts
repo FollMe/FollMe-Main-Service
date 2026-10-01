@@ -1,10 +1,23 @@
-import { Body, Controller, Get, Request, Post, Put, Delete, UseGuards, Param, Query } from '@nestjs/common';
+import {
+  Body, Controller, Get, Request, Post, Put, Delete, UseGuards, Param, Query, UseInterceptors, UploadedFile,
+  ParseFilePipe, FileTypeValidator, BadRequestException,
+} from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
 import { InvitationsService } from './invitations.service';
 import { AuthGuard } from '@nestjs/passport';
 import { CreateInvitationDTO } from './dtos/createInvitation.dto';
 import { UpdateInvitationDTO } from './dtos/updateInvitation.dto';
 import { PublicRsvpDTO, RsvpDTO } from './dtos/rsvp.dto';
 import { WishDTO } from './dtos/wish.dto';
+import { PhotoOrderDTO } from './dtos/photo.dto';
+import { MAX_PHOTO_BYTES } from './invitation.constants';
+
+const photoPipe = new ParseFilePipe({
+  validators: [new FileTypeValidator({ fileType: /^image\/(jpeg|png|webp)$/ })],
+  exceptionFactory: (error) => new BadRequestException(
+    error === 'File is required' ? 'Vui lòng chọn ảnh' : 'Chỉ nhận ảnh JPG, PNG hoặc WebP',
+  ),
+});
 
 @Controller('api')
 export class invitationsController {
@@ -60,6 +73,39 @@ export class invitationsController {
   @UseGuards(AuthGuard("jwt"))
   async unhideWish(@Request() req, @Param('id') id: string, @Param('wishId') wishId: string) {
     return await this.invitationsService.setWishHidden(id, wishId, req.user._id, false);
+  }
+
+  @Post('events/:id/photos')
+  @UseGuards(AuthGuard("jwt"))
+  @UseInterceptors(FileInterceptor('photo', { limits: { fileSize: MAX_PHOTO_BYTES, files: 1 } }))
+  async addPhoto(@Request() req, @Param('id') id: string, @UploadedFile(photoPipe) file: Express.Multer.File) {
+    return await this.invitationsService.addPhoto(id, req.user._id, file);
+  }
+
+  @Put('events/:id/photos/order')
+  @UseGuards(AuthGuard("jwt"))
+  async orderPhotos(@Request() req, @Param('id') id: string, @Body() body: PhotoOrderDTO) {
+    return await this.invitationsService.orderPhotos(id, req.user._id, body.order);
+  }
+
+  @Delete('events/:id/photos/:photoId')
+  @UseGuards(AuthGuard("jwt"))
+  async removePhoto(@Request() req, @Param('id') id: string, @Param('photoId') photoId: string) {
+    return await this.invitationsService.removePhoto(id, photoId, req.user._id);
+  }
+
+  /** The venue screen's secret key; `rotate` replaces it (old link stops working). */
+  @Post('events/:id/screen-key')
+  @UseGuards(AuthGuard("jwt"))
+  async screenKey(@Request() req, @Param('id') id: string, @Body('rotate') rotate?: boolean) {
+    return await this.invitationsService.screenKey(id, req.user._id, rotate === true);
+  }
+
+  // ---------- Venue screen (secret link) ----------
+
+  @Get('events/:id/screen/:key')
+  async screen(@Param('id') id: string, @Param('key') key: string, @Query('since') since?: string) {
+    return await this.invitationsService.screen(id, key, since);
   }
 
   // ---------- Guests (personal link) ----------

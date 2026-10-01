@@ -1,9 +1,10 @@
 import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { plainToInstance } from 'class-transformer';
 import { validate } from 'class-validator';
-import { InvitationsService, summarize } from './invitations.service';
+import { InvitationsService, ogImage, summarize } from './invitations.service';
 import { PublicRsvpDTO } from './dtos/rsvp.dto';
 import { CreateInvitationDTO } from './dtos/createInvitation.dto';
+import { PhotoOrderDTO } from './dtos/photo.dto';
 
 jest.mock('src/sharedServices/mailer.service', () => ({ MailerService: class {} }));
 
@@ -33,6 +34,7 @@ function setup({ event = { _id: EVENT, startAt: new Date(Date.now() + 86400000) 
   });
   eventModel.findOne = jest.fn(() => query(event));
   eventModel.findOneAndUpdate = jest.fn(() => query(event));
+  eventModel.updateOne = jest.fn(async () => ({ matchedCount: 1, modifiedCount: 1 }));
   const guestModel: any = {
     findOne: jest.fn(() => query(guest)),
     updateOne: jest.fn(async () => ({ matchedCount: 1 })),
@@ -47,8 +49,15 @@ function setup({ event = { _id: EVENT, startAt: new Date(Date.now() + 86400000) 
   const session = { startTransaction: jest.fn(), commitTransaction: jest.fn(), abortTransaction: jest.fn(), endSession: jest.fn() };
   const connection: any = { startSession: jest.fn(async () => session) };
   const mailer: any = { sendInBackground: jest.fn() };
-  const service = new InvitationsService(eventModel, guestModel, wishModel, connection, mailer);
-  return { service, eventModel, guestModel, wishModel, mailer, saved };
+  const cloudinary: any = {
+    uploadImage: jest.fn(async () => ({
+      secure_url: 'https://res.cloudinary.com/demo/image/upload/v1/FollMe/events/e1/a.jpg',
+      public_id: 'FollMe/events/e1/a', width: 1600, height: 1067,
+    })),
+    destroy: jest.fn(async () => ({ result: 'ok' })),
+  };
+  const service = new InvitationsService(eventModel, guestModel, wishModel, connection, mailer, cloudinary);
+  return { service, eventModel, guestModel, wishModel, mailer, cloudinary, saved };
 }
 
 describe('createOne', () => {
@@ -237,5 +246,132 @@ describe('preview', () => {
     const res = await service.preview('event', EVENT);
     expect(res.title).toBe('Thiệp mời: Sinh nhật Vy');
     expect(res.description).toBe('Q1');
+  });
+});
+
+describe('photos', () => {
+  const PHOTO_A = '64b0000000000000000000c1';
+  const PHOTO_B = '64b0000000000000000000c2';
+  const file: any = { buffer: Buffer.from('x'), mimetype: 'image/jpeg' };
+
+  it('uploads into the event folder and appends to the album', async () => {
+    const { service, eventModel, cloudinary } = setup({ event: { _id: EVENT, photos: [] } as any });
+    const photo = await service.addPhoto(EVENT, HOST, file);
+    expect(cloudinary.uploadImage).toHaveBeenCalledWith(file, `FollMe/events/${EVENT}`);
+    expect(photo).toMatchObject({ publicId: 'FollMe/events/e1/a', width: 1600, height: 1067 });
+    const [filter, update] = eventModel.updateOne.mock.calls[0];
+    expect(filter).toMatchObject({ _id: EVENT, host: HOST, 'photos.11': { $exists: false } });
+    expect(update).toEqual({ $push: { photos: photo } });
+  });
+
+  it('refuses a 13th photo before uploading it', async () => {
+    const full = Array.from({ length: 12 }, (_, i) => ({ _id: `p${i}` }));
+    const { service, cloudinary } = setup({ event: { _id: EVENT, photos: full } as any });
+    await expect(service.addPhoto(EVENT, HOST, file)).rejects.toBeInstanceOf(BadRequestException);
+    expect(cloudinary.uploadImage).not.toHaveBeenCalled();
+  });
+
+  it('deletes the upload when the album filled up meanwhile', async () => {
+    const { service, eventModel, cloudinary } = setup({ event: { _id: EVENT, photos: [] } as any });
+    eventModel.updateOne.mockResolvedValueOnce({ matchedCount: 0, modifiedCount: 0 });
+    await expect(service.addPhoto(EVENT, HOST, file)).rejects.toBeInstanceOf(BadRequestException);
+    expect(cloudinary.destroy).toHaveBeenCalledWith('FollMe/events/e1/a');
+  });
+
+  it('only the host can upload', async () => {
+    const { service, cloudinary } = setup({ event: null });
+    await expect(service.addPhoto(EVENT, 'someone', file)).rejects.toBeInstanceOf(NotFoundException);
+    expect(cloudinary.uploadImage).not.toHaveBeenCalled();
+  });
+
+  it('removes a photo and its file', async () => {
+    const event: any = { _id: EVENT, photos: [{ _id: PHOTO_A, publicId: 'FollMe/events/e1/a' }] };
+    const { service, eventModel, cloudinary } = setup({ event });
+    await service.removePhoto(EVENT, PHOTO_A, HOST);
+    expect(eventModel.findOneAndUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({ host: HOST, 'photos._id': PHOTO_A }),
+      { $pull: { photos: { _id: PHOTO_A } } },
+    );
+    expect(cloudinary.destroy).toHaveBeenCalledWith('FollMe/events/e1/a');
+  });
+
+  it('reorders only with every photo listed once', async () => {
+    const photos = [{ _id: PHOTO_A, url: 'a' }, { _id: PHOTO_B, url: 'b' }];
+    const { service, eventModel } = setup({ event: { _id: EVENT, photos } as any });
+    await service.orderPhotos(EVENT, HOST, [PHOTO_B, PHOTO_A]);
+    expect(eventModel.updateOne).toHaveBeenCalledWith(
+      expect.objectContaining({ photos: { $size: 2 } }),
+      { $set: { photos: [photos[1], photos[0]] } },
+    );
+    for (const order of [[PHOTO_A], [PHOTO_A, PHOTO_A], [PHOTO_A, '64b0000000000000000000c9']]) {
+      await expect(service.orderPhotos(EVENT, HOST, order)).rejects.toBeInstanceOf(BadRequestException);
+    }
+  });
+
+  it('validates the order body', async () => {
+    const bad = plainToInstance(PhotoOrderDTO, { order: ['nope'] });
+    expect((await validate(bad)).map(e => e.property)).toEqual(['order']);
+  });
+
+  it('crops the cover for link previews', () => {
+    expect(ogImage('https://res.cloudinary.com/x/image/upload/v1/a.jpg'))
+      .toBe('https://res.cloudinary.com/x/image/upload/c_fill,g_faces,w_1200,h_630,q_auto,f_jpg/v1/a.jpg');
+    expect(ogImage('https://example.com/a.jpg')).toBeUndefined();
+    expect(ogImage(undefined)).toBeUndefined();
+  });
+
+  it('previews with the cover photo', async () => {
+    const event: any = {
+      _id: EVENT, type: 'wedding', groomName: 'Minh', brideName: 'Lan', title: 'T',
+      photos: [{ url: 'https://res.cloudinary.com/x/image/upload/v1/a.jpg' }],
+    };
+    const { service } = setup({ event });
+    const res = await service.preview('event', EVENT);
+    expect(res.image).toContain('/image/upload/c_fill,g_faces,w_1200,h_630');
+  });
+});
+
+describe('venue screen', () => {
+  const KEY = 'a'.repeat(32);
+
+  it('makes a key once and keeps it', async () => {
+    const { service, eventModel } = setup({ event: { _id: EVENT } as any });
+    eventModel.findOne
+      .mockReturnValueOnce(query({ _id: EVENT }))
+      .mockReturnValueOnce(query({ _id: EVENT, screenKey: KEY }));
+    expect(await service.screenKey(EVENT, HOST)).toEqual({ key: KEY });
+    expect(eventModel.updateOne.mock.calls[0][0]).toMatchObject({ screenKey: { $exists: false } });
+
+    const again = setup({ event: { _id: EVENT, screenKey: KEY } as any });
+    expect(await again.service.screenKey(EVENT, HOST)).toEqual({ key: KEY });
+    expect(again.eventModel.updateOne).not.toHaveBeenCalled();
+  });
+
+  it('rotates the key on request', async () => {
+    const { service, eventModel } = setup({ event: { _id: EVENT, screenKey: KEY } as any });
+    const { key } = await service.screenKey(EVENT, HOST, true);
+    expect(key).toMatch(/^[a-f0-9]{32}$/);
+    expect(key).not.toBe(KEY);
+    expect(eventModel.updateOne).toHaveBeenCalledWith(expect.objectContaining({ host: HOST }), { $set: { screenKey: key } });
+  });
+
+  it('needs the right key', async () => {
+    const { service, eventModel } = setup();
+    await expect(service.screen(EVENT, 'short')).rejects.toBeInstanceOf(NotFoundException);
+    expect(eventModel.findOne).not.toHaveBeenCalled();
+    await service.screen(EVENT, KEY);
+    expect(eventModel.findOne).toHaveBeenCalledWith(expect.objectContaining({ _id: EVENT, screenKey: KEY }));
+
+    const wrong = setup({ event: null });
+    await expect(wrong.service.screen(EVENT, KEY)).rejects.toBeInstanceOf(NotFoundException);
+  });
+
+  it('polls wishes changed since the cursor, hidden ones included', async () => {
+    const { service, wishModel } = setup();
+    const since = '2027-01-10T10:00:00.000Z';
+    const res = await service.screen(EVENT, KEY, since);
+    expect(wishModel.find).toHaveBeenCalledWith({ event: EVENT, updatedAt: { $gte: new Date(since) } });
+    expect(Date.parse(res.cursor)).toBeLessThan(Date.now());
+    await expect(service.screen(EVENT, KEY, 'yesterday')).rejects.toBeInstanceOf(BadRequestException);
   });
 });
