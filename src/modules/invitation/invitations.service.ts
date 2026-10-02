@@ -25,7 +25,7 @@ const template = Handlebars.compile(templateStr);
 // Fields of an event that guests may see (no host id, no counters).
 const PUBLIC_EVENT_FIELDS = '_id title location mapLocation startAt type theme groomName brideName message allowPublicLink music scratchDate gifts photos';
 // Fields of a guest the host sees.
-const HOST_GUEST_FIELDS = '_id name mail viewed source rsvp sentAt remindedAt';
+const HOST_GUEST_FIELDS = '_id name mail viewed source rsvp sentAt remindedAt group';
 // Fields the host can set, picked explicitly from request bodies.
 const EDITABLE_FIELDS = [
   'title', 'location', 'mapLocation', 'startAt', 'type', 'theme',
@@ -55,6 +55,12 @@ function pickGift(gift: GiftDTO) {
     accountNumber: gift.accountNumber.trim(),
     accountName: (gift.accountName ?? '').trim().toUpperCase(),
   };
+}
+
+/** A group name with single spaces, or undefined for none. */
+function cleanGroup(group?: string) {
+  const clean = group?.replace(/\s+/g, ' ').trim();
+  return clean || undefined;
 }
 
 function assertObjectId(id: string) {
@@ -269,6 +275,7 @@ export class InvitationsService {
       event: eventId,
       name: guest.name,
       mail: guest.email,
+      group: cleanGroup(guest.group),
       source: 'host',
     })), { session });
   }
@@ -373,7 +380,7 @@ export class InvitationsService {
 
   // ---------- Guests ----------
 
-  /** Renames a guest (their link shows the new name), marks it sent or reminded. */
+  /** Renames or regroups a guest (their link shows the new name), marks it sent or reminded. */
   async updateGuest(eventId: string, guestId: string, userId: string, body: UpdateGuestDTO) {
     assertObjectId(guestId);
     await this.hostEvent(eventId, userId, '_id');
@@ -385,6 +392,14 @@ export class InvitationsService {
         throw new BadRequestException('Vui lòng nhập tên khách');
       }
       set.name = name;
+    }
+    if (body.group !== undefined) {
+      const group = cleanGroup(body.group);
+      if (group) {
+        set.group = group;
+      } else {
+        unset.group = 1;
+      }
     }
     if (body.sent === true) {
       set.sentAt = new Date();

@@ -10,3 +10,4 @@ export const GIFT_SIDES = ['groom', 'bride', 'host'] as const;
 export const MAX_GIFT_ACCOUNTS = 2;
 export const MAX_PHOTOS = 12;
 export const MAX_PHOTO_BYTES = 6 * 1024 * 1024;
+export const MAX_GROUP_NAME = 40;
