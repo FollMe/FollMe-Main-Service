@@ -19,6 +19,7 @@ export class Guest {
   rsvp?: Rsvp;
   sentAt?: Date;
   remindedAt?: Date;
+  group?: string;
 }
 
 const RsvpSchema = new Schema({
@@ -40,6 +41,8 @@ export const GuestSchema = new Schema({
   sentAt: { type: Date },
   // When the host last sent them a reminder to answer
   remindedAt: { type: Date },
+  // Set by the host: "Nhà trai", "Nhà gái", "Bạn bè"...
+  group: { type: String },
 }, { timestamps: true });
 
 export type GuestDocument = Guest & Document;

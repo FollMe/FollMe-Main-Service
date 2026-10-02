@@ -63,15 +63,18 @@ function setup({ event = { _id: EVENT, startAt: new Date(Date.now() + 86400000) 
 }
 
 describe('createOne', () => {
-  it('stores only editable fields and the host', async () => {
-    const { service, saved, mailer } = setup();
+  it('stores only editable fields and the host, guests with their group', async () => {
+    const setupRef = setup();
+    const { service, saved, mailer } = setupRef;
     const body: any = {
       title: ' Lễ cưới Minh & Lan ', location: 'Hà Nội', startAt: '2027-01-10T10:00:00.000Z',
       type: 'wedding', theme: 'blush', groomName: 'Minh', brideName: 'Lan', allowPublicLink: true,
       host: 'attacker', publicViews: 999, isDeleted: true,
-      guests: [{ name: 'An', email: 'an@example.com' }, { name: 'Bình' }],
+      guests: [{ name: 'An', email: 'an@example.com', group: ' Nhà  gái ' }, { name: 'Bình', group: ' ' }],
     };
+    const { guestModel } = setupRef;
     await service.createOne(body, HOST, 'host@example.com');
+    expect(guestModel.insertMany.mock.calls[0][0].map(g => [g.name, g.group])).toEqual([['An', 'Nhà gái'], ['Bình', undefined]]);
     expect(saved[0]).toEqual({
       title: 'Lễ cưới Minh & Lan', location: 'Hà Nội', startAt: '2027-01-10T10:00:00.000Z',
       type: 'wedding', theme: 'blush', groomName: 'Minh', brideName: 'Lan', allowPublicLink: true,
@@ -211,6 +214,8 @@ describe('CreateInvitationDTO', () => {
     expect((await validate(many)).map(e => e.property)).toEqual(['guests']);
     const longName = plainToInstance(CreateInvitationDTO, { ...base, guests: [{ name: 'A'.repeat(101) }] });
     expect((await validate(longName)).map(e => e.property)).toEqual(['guests']);
+    const longGroup = plainToInstance(CreateInvitationDTO, { ...base, guests: [{ name: 'A', group: 'G'.repeat(41) }] });
+    expect((await validate(longGroup)).map(e => e.property)).toEqual(['guests']);
   });
 
   it('rejects unknown types and themes', async () => {
@@ -426,6 +431,14 @@ describe('guests', () => {
     );
   });
 
+  it('moves a guest into a group and out of it', async () => {
+    const { service, guestModel } = setup();
+    await service.updateGuest(EVENT, GUEST, HOST, { group: '  Nhà   trai ' });
+    expect(guestModel.findOneAndUpdate.mock.calls[0][1]).toEqual({ $set: { group: 'Nhà trai' } });
+    await service.updateGuest(EVENT, GUEST, HOST, { group: '  ' });
+    expect(guestModel.findOneAndUpdate.mock.calls[1][1]).toEqual({ $unset: { group: 1 } });
+  });
+
   it('marks and unmarks a reminder', async () => {
     const { service, guestModel } = setup();
     await service.updateGuest(EVENT, GUEST, HOST, { reminded: true });
@@ -435,8 +448,8 @@ describe('guests', () => {
   });
 
   it('validates the body', async () => {
-    const bad = plainToInstance(UpdateGuestDTO, { name: 'A'.repeat(101), sent: 'yes', reminded: 1 });
-    expect((await validate(bad)).map(e => e.property).sort()).toEqual(['name', 'reminded', 'sent']);
+    const bad = plainToInstance(UpdateGuestDTO, { name: 'A'.repeat(101), sent: 'yes', reminded: 1, group: 'G'.repeat(41) });
+    expect((await validate(bad)).map(e => e.property).sort()).toEqual(['group', 'name', 'reminded', 'sent']);
   });
 });
 
