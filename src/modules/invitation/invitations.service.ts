@@ -25,7 +25,7 @@ const template = Handlebars.compile(templateStr);
 // Fields of an event that guests may see (no host id, no counters).
 const PUBLIC_EVENT_FIELDS = '_id title location mapLocation startAt type theme groomName brideName message allowPublicLink music scratchDate gifts photos';
 // Fields of a guest the host sees.
-const HOST_GUEST_FIELDS = '_id name mail viewed source rsvp sentAt';
+const HOST_GUEST_FIELDS = '_id name mail viewed source rsvp sentAt remindedAt';
 // Fields the host can set, picked explicitly from request bodies.
 const EDITABLE_FIELDS = [
   'title', 'location', 'mapLocation', 'startAt', 'type', 'theme',
@@ -142,18 +142,22 @@ export class InvitationsService {
     };
   }
 
-  /** The shared link anyone can open, if the host turned it on. */
-  async findPublic(eventId: string) {
+  /**
+   * The shared link anyone can open, if the host turned it on. Counts a
+   * view, unless it is the host (`viewerId`) checking their own card.
+   */
+  async findPublic(eventId: string, viewerId?: string) {
     assertObjectId(eventId);
-    const event = await this.eventModel.findOneAndUpdate(
-      { _id: eventId, isDeleted: { $ne: true }, allowPublicLink: true },
-      { $inc: { publicViews: 1 } },
-    ).setOptions({ timestamps: false })
-      .select(PUBLIC_EVENT_FIELDS);
+    const event: any = await this.eventModel.findOne({ _id: eventId, isDeleted: { $ne: true }, allowPublicLink: true })
+      .select(`${PUBLIC_EVENT_FIELDS} host`);
     if (!event) {
       throw new NotFoundException();
     }
-    return { event, wishes: await this.visibleWishes(eventId) };
+    if (!viewerId || String(event.host) !== String(viewerId)) {
+      await this.eventModel.updateOne({ _id: eventId }, { $inc: { publicViews: 1 } }, { timestamps: false });
+    }
+    const { host, ...publicEvent } = event.toJSON();
+    return { event: publicEvent, wishes: await this.visibleWishes(eventId) };
   }
 
   /**
@@ -217,6 +221,27 @@ export class InvitationsService {
     } finally {
       session.endSession();
     }
+  }
+
+  /**
+   * Deletes an event: its personal links, public link and venue screen stop
+   * working. The guests, answers and wishes stay in the database (soft
+   * delete), the photos are removed from Cloudinary.
+   */
+  async remove(eventId: string, userId: string) {
+    assertObjectId(eventId);
+    // The event as it was, to find its photos
+    const event: any = await this.eventModel.findOneAndUpdate(
+      { _id: eventId, host: userId, isDeleted: { $ne: true } },
+      { $set: { isDeleted: true }, $unset: { photos: 1, screenKey: 1 } },
+    ).select('_id photos');
+    if (!event) {
+      throw new NotFoundException();
+    }
+    for (const photo of event.photos ?? []) {
+      this.destroyPhoto(photo.publicId);
+    }
+    return { _id: eventId };
   }
 
   async update(eventId: string, userId: string, body: UpdateInvitationDTO, slEmail: string) {
@@ -348,7 +373,7 @@ export class InvitationsService {
 
   // ---------- Guests ----------
 
-  /** Renames a guest (their link shows the new name) or marks it sent. */
+  /** Renames a guest (their link shows the new name), marks it sent or reminded. */
   async updateGuest(eventId: string, guestId: string, userId: string, body: UpdateGuestDTO) {
     assertObjectId(guestId);
     await this.hostEvent(eventId, userId, '_id');
@@ -365,6 +390,11 @@ export class InvitationsService {
       set.sentAt = new Date();
     } else if (body.sent === false) {
       unset.sentAt = 1;
+    }
+    if (body.reminded === true) {
+      set.remindedAt = new Date();
+    } else if (body.reminded === false) {
+      unset.remindedAt = 1;
     }
     if (!Object.keys(set).length && !Object.keys(unset).length) {
       throw new BadRequestException('Không có gì để cập nhật');

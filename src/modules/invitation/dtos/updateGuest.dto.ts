@@ -1,6 +1,6 @@
 import { IsBoolean, IsNotEmpty, IsOptional, IsString, MaxLength } from "class-validator";
 
-/** The host fixes a guest's name or marks their invitation sent. */
+/** The host fixes a guest's name, or marks their invitation or reminder sent. */
 export class UpdateGuestDTO {
   @IsOptional()
   @IsString()
@@ -11,4 +11,8 @@ export class UpdateGuestDTO {
   @IsOptional()
   @IsBoolean()
   sent?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  reminded?: boolean;
 }

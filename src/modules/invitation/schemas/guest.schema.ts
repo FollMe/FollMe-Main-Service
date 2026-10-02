@@ -18,6 +18,7 @@ export class Guest {
   source: string;
   rsvp?: Rsvp;
   sentAt?: Date;
+  remindedAt?: Date;
 }
 
 const RsvpSchema = new Schema({
@@ -37,6 +38,8 @@ export const GuestSchema = new Schema({
   rsvp: { type: RsvpSchema, default: undefined },
   // When the host marked their personal link as sent (Zalo, Messenger...)
   sentAt: { type: Date },
+  // When the host last sent them a reminder to answer
+  remindedAt: { type: Date },
 }, { timestamps: true });
 
 export type GuestDocument = Guest & Document;

@@ -426,9 +426,64 @@ describe('guests', () => {
     );
   });
 
+  it('marks and unmarks a reminder', async () => {
+    const { service, guestModel } = setup();
+    await service.updateGuest(EVENT, GUEST, HOST, { reminded: true });
+    expect(guestModel.findOneAndUpdate.mock.calls[0][1].$set.remindedAt).toBeInstanceOf(Date);
+    await service.updateGuest(EVENT, GUEST, HOST, { reminded: false });
+    expect(guestModel.findOneAndUpdate.mock.calls[1][1]).toEqual({ $unset: { remindedAt: 1 } });
+  });
+
   it('validates the body', async () => {
-    const bad = plainToInstance(UpdateGuestDTO, { name: 'A'.repeat(101), sent: 'yes' });
-    expect((await validate(bad)).map(e => e.property).sort()).toEqual(['name', 'sent']);
+    const bad = plainToInstance(UpdateGuestDTO, { name: 'A'.repeat(101), sent: 'yes', reminded: 1 });
+    expect((await validate(bad)).map(e => e.property).sort()).toEqual(['name', 'reminded', 'sent']);
+  });
+});
+
+describe('remove', () => {
+  const photos = [{ _id: 'p1', publicId: 'FollMe/events/e1/a' }, { _id: 'p2', publicId: 'FollMe/events/e1/b' }];
+
+  it('deletes the host\'s event softly and its photos for good', async () => {
+    const { service, eventModel, cloudinary } = setup({ event: { _id: EVENT, photos } as any });
+    expect(await service.remove(EVENT, HOST)).toEqual({ _id: EVENT });
+    expect(eventModel.findOneAndUpdate).toHaveBeenCalledWith(
+      { _id: EVENT, host: HOST, isDeleted: { $ne: true } },
+      { $set: { isDeleted: true }, $unset: { photos: 1, screenKey: 1 } },
+    );
+    expect(cloudinary.destroy.mock.calls.map(c => c[0])).toEqual(['FollMe/events/e1/a', 'FollMe/events/e1/b']);
+  });
+
+  it('404s for someone else\'s or an already deleted event', async () => {
+    const { service, cloudinary } = setup({ event: null });
+    await expect(service.remove(EVENT, 'someone')).rejects.toBeInstanceOf(NotFoundException);
+    expect(cloudinary.destroy).not.toHaveBeenCalled();
+  });
+});
+
+describe('findPublic', () => {
+  const event = (fields: any = {}) => {
+    const all = { _id: EVENT, title: 'Cưới', host: HOST, ...fields };
+    return { ...all, toJSON: () => ({ ...all }) };
+  };
+
+  it('counts a view and hides the host', async () => {
+    const { service, eventModel } = setup({ event: event() as any });
+    const res: any = await service.findPublic(EVENT);
+    expect(eventModel.updateOne).toHaveBeenCalledWith({ _id: EVENT }, { $inc: { publicViews: 1 } }, { timestamps: false });
+    expect(res.event).toEqual({ _id: EVENT, title: 'Cưới' });
+  });
+
+  it('does not count the host opening their own public link', async () => {
+    const { service, eventModel } = setup({ event: event() as any });
+    await service.findPublic(EVENT, HOST);
+    expect(eventModel.updateOne).not.toHaveBeenCalled();
+  });
+
+  it('404s when the link is off or the event deleted', async () => {
+    const { service, eventModel } = setup({ event: null });
+    await expect(service.findPublic(EVENT)).rejects.toBeInstanceOf(NotFoundException);
+    expect(eventModel.findOne).toHaveBeenCalledWith({ _id: EVENT, isDeleted: { $ne: true }, allowPublicLink: true });
+    expect(eventModel.updateOne).not.toHaveBeenCalled();
   });
 });
 
