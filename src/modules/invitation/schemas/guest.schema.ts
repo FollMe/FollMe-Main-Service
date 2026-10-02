@@ -1,5 +1,5 @@
 import { Schema } from 'mongoose';
-import { RSVP_STATUSES } from '../invitation.constants';
+import { PURGE_AFTER_SECONDS, RSVP_STATUSES } from '../invitation.constants';
 
 export class Rsvp {
   status: string;
@@ -14,6 +14,7 @@ export class Guest {
   viewed: number;
   event: string;
   isDeleted: boolean;
+  deletedAt?: Date;
   // 'host': added by the host; 'public': answered through the public link
   source: string;
   rsvp?: Rsvp;
@@ -35,6 +36,8 @@ export const GuestSchema = new Schema({
   viewed: { type: Number, require: true, default: 0 },
   event: { type: Schema.Types.ObjectId, ref: 'Event', require: true },
   isDeleted: { type: Boolean, default: false },
+  // Set when the guest or their event is deleted: removed for good later
+  deletedAt: { type: Date },
   source: { type: String, enum: ['host', 'public'], default: 'host' },
   rsvp: { type: RsvpSchema, default: undefined },
   // When the host marked their personal link as sent (Zalo, Messenger...)
@@ -44,5 +47,9 @@ export const GuestSchema = new Schema({
   // Set by the host: "Nhà trai", "Nhà gái", "Bạn bè"...
   group: { type: String },
 }, { timestamps: true });
+
+// The host's list and every count of an event's guests
+GuestSchema.index({ event: 1 });
+GuestSchema.index({ deletedAt: 1 }, { expireAfterSeconds: PURGE_AFTER_SECONDS });
 
 export type GuestDocument = Guest & Document;

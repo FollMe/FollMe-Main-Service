@@ -231,19 +231,25 @@ export class InvitationsService {
 
   /**
    * Deletes an event: its personal links, public link and venue screen stop
-   * working. The guests, answers and wishes stay in the database (soft
-   * delete), the photos are removed from Cloudinary.
+   * working, the photos are removed from Cloudinary. The event, guests,
+   * answers and wishes are kept PURGE_AFTER_SECONDS (to undo a mistake on
+   * request), then MongoDB removes them (TTL on deletedAt).
    */
   async remove(eventId: string, userId: string) {
     assertObjectId(eventId);
+    const deletedAt = new Date();
     // The event as it was, to find its photos
     const event: any = await this.eventModel.findOneAndUpdate(
       { _id: eventId, host: userId, isDeleted: { $ne: true } },
-      { $set: { isDeleted: true }, $unset: { photos: 1, screenKey: 1 } },
+      { $set: { isDeleted: true, deletedAt }, $unset: { photos: 1, screenKey: 1 } },
     ).select('_id photos');
     if (!event) {
       throw new NotFoundException();
     }
+    await Promise.all([
+      this.guestModel.updateMany({ event: eventId, deletedAt: { $exists: false } }, { $set: { deletedAt } }),
+      this.wishModel.updateMany({ event: eventId }, { $set: { deletedAt } }),
+    ]);
     for (const photo of event.photos ?? []) {
       this.destroyPhoto(photo.publicId);
     }
@@ -432,13 +438,13 @@ export class InvitationsService {
     return guest;
   }
 
-  /** Removes a guest: their personal link stops working. */
+  /** Removes a guest: their personal link stops working (purged later). */
   async removeGuest(eventId: string, guestId: string, userId: string) {
     assertObjectId(guestId);
     await this.hostEvent(eventId, userId, '_id');
     const res = await this.guestModel.updateOne(
       { _id: guestId, event: eventId, isDeleted: { $ne: true } },
-      { $set: { isDeleted: true } },
+      { $set: { isDeleted: true, deletedAt: new Date() } },
     );
     if (!res.matchedCount) {
       throw new NotFoundException();

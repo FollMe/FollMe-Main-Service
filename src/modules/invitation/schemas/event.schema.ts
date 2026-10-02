@@ -1,5 +1,5 @@
 import { Schema } from 'mongoose';
-import { EVENT_MUSIC, EVENT_THEMES, EVENT_TYPES, GIFT_SIDES } from '../invitation.constants';
+import { EVENT_MUSIC, EVENT_THEMES, EVENT_TYPES, GIFT_SIDES, PURGE_AFTER_SECONDS } from '../invitation.constants';
 
 export class Event {
   title: string;
@@ -8,6 +8,7 @@ export class Event {
   startAt: Date;
   host: string;
   isDeleted: boolean;
+  deletedAt?: Date;
   type: string;
   theme: string;
   groomName: string;
@@ -60,6 +61,8 @@ export const EventSchema = new Schema({
   startAt: { type: Date },
   host: { type: Schema.Types.ObjectId, ref: 'User' },
   isDeleted: { type: Boolean, default: false },
+  // Set when the host deletes it: removed for good PURGE_AFTER_SECONDS later
+  deletedAt: { type: Date },
   type: { type: String, enum: EVENT_TYPES, default: 'other' },
   theme: { type: String, enum: EVENT_THEMES, default: 'minimal' },
   groomName: { type: String, default: '' },
@@ -82,6 +85,10 @@ export const EventSchema = new Schema({
   toJSON: { virtuals: true },
   toObject: { virtuals: true }
 });
+
+// "Thiệp của tôi": the host's events, latest first
+EventSchema.index({ host: 1, startAt: -1 });
+EventSchema.index({ deletedAt: 1 }, { expireAfterSeconds: PURGE_AFTER_SECONDS });
 
 EventSchema.virtual('guests', {
   ref: 'Guest',
