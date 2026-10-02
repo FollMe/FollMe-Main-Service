@@ -431,3 +431,33 @@ describe('guests', () => {
     expect((await validate(bad)).map(e => e.property).sort()).toEqual(['name', 'sent']);
   });
 });
+
+describe('findGuest', () => {
+  const doc = (fields: any) => ({ ...fields, toJSON: () => ({ ...fields }) });
+  const card = (eventFields: any = {}) => doc({
+    _id: GUEST, name: 'Cô Ba',
+    event: doc({ _id: EVENT, title: 'Cưới', host: HOST, isDeleted: false, ...eventFields }),
+  });
+
+  it('counts a view and hides the host', async () => {
+    const { service, guestModel } = setup({ guest: card() as any });
+    const res: any = await service.findGuest(GUEST);
+    expect(guestModel.updateOne).toHaveBeenCalledWith({ _id: GUEST }, { $inc: { viewed: 1 } });
+    expect(res.name).toBe('Cô Ba');
+    expect(res.event).toEqual({ _id: EVENT, title: 'Cưới' });
+  });
+
+  it('does not count the host opening their guest\'s card', async () => {
+    const { service, guestModel } = setup({ guest: card() as any });
+    await service.findGuest(GUEST, HOST);
+    expect(guestModel.updateOne).not.toHaveBeenCalled();
+    await service.findGuest(GUEST, '64b0000000000000000000ff');
+    expect(guestModel.updateOne).toHaveBeenCalledTimes(1);
+  });
+
+  it('404s for a guest of a deleted event', async () => {
+    const { service, guestModel } = setup({ guest: card({ isDeleted: true }) as any });
+    await expect(service.findGuest(GUEST)).rejects.toBeInstanceOf(NotFoundException);
+    expect(guestModel.updateOne).not.toHaveBeenCalled();
+  });
+});
