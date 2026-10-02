@@ -1,7 +1,8 @@
 import {
   Body, Controller, Get, Request, Post, Put, Delete, UseGuards, Param, Query, UseInterceptors, UploadedFile,
-  ParseFilePipe, FileTypeValidator, BadRequestException,
+  ParseFilePipe, FileTypeValidator, BadRequestException, Headers,
 } from '@nestjs/common';
+import { JwtService } from '@nestjs/jwt';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { InvitationsService } from './invitations.service';
 import { AuthGuard } from '@nestjs/passport';
@@ -22,7 +23,23 @@ const photoPipe = new ParseFilePipe({
 
 @Controller('api')
 export class invitationsController {
-  constructor(private readonly invitationsService: InvitationsService) { }
+  constructor(
+    private readonly invitationsService: InvitationsService,
+    private readonly jwtService: JwtService,
+  ) { }
+
+  /** The signed-in user on a public route, if any (the token is optional there). */
+  private viewerId(authorization?: string): string | undefined {
+    const token = authorization?.replace(/^Bearer\s+/i, '');
+    if (!token || token === 'null' || token === 'undefined') {
+      return undefined;
+    }
+    try {
+      return this.jwtService.verify(token, { secret: process.env.JWT_SECRET })?.sub;
+    } catch (err) {
+      return undefined;
+    }
+  }
 
   // ---------- Host ----------
 
@@ -124,11 +141,8 @@ export class invitationsController {
   // ---------- Guests (personal link) ----------
 
   @Get('invitations/:id')
-  async getInvitation(
-    @Param() params
-  ) {
-    const invitationId = params.id;
-    const invitation = await this.invitationsService.findGuest(invitationId);
+  async getInvitation(@Param('id') id: string, @Headers('authorization') authorization?: string) {
+    const invitation = await this.invitationsService.findGuest(id, this.viewerId(authorization));
     return { invitation };
   }
 

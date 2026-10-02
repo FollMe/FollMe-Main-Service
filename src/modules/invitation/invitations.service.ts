@@ -114,26 +114,31 @@ export class InvitationsService {
     };
   }
 
-  /** A guest's personal invitation. Counts a view. */
-  async findGuest(guestId: string) {
+  /**
+   * A guest's personal invitation. Counts a view, unless it is the host
+   * (`viewerId`) looking at their guest's card.
+   */
+  async findGuest(guestId: string, viewerId?: string) {
     assertObjectId(guestId);
 
-    const invitation = await this.guestModel.findOneAndUpdate({
-      isDeleted: { $ne: true },
-      _id: guestId
-    }, {
-      $inc: { viewed: 1 }
-    }).select('_id name event rsvp')
-      .populate('event', PUBLIC_EVENT_FIELDS);
-
-    if (!invitation || !(invitation as any).event) {
+    const guest: any = await this.guestModel.findOne({ isDeleted: { $ne: true }, _id: guestId })
+      .select('_id name event rsvp')
+      .populate('event', `${PUBLIC_EVENT_FIELDS} host isDeleted`);
+    const event = guest?.event;
+    if (!guest || !event || event.isDeleted) {
       throw new NotFoundException();
     }
 
-    const eventId = (invitation as any).event._id;
+    if (!viewerId || String(event.host) !== String(viewerId)) {
+      await this.guestModel.updateOne({ _id: guest._id }, { $inc: { viewed: 1 } });
+    }
+
+    // Guests never see who the host is
+    const { host, isDeleted, ...publicEvent } = event.toJSON();
     return {
-      ...(invitation as any).toJSON(),
-      wishes: await this.visibleWishes(eventId),
+      ...guest.toJSON(),
+      event: publicEvent,
+      wishes: await this.visibleWishes(event._id),
     };
   }
 

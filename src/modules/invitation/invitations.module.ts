@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { invitationsController } from './invitations.controller';
 import { InvitationsService } from './invitations.service';
 import { MongooseModule } from '@nestjs/mongoose';
+import { JwtModule } from '@nestjs/jwt';
 import { Event, EventSchema } from './schemas/event.schema';
 import { Guest, GuestSchema } from './schemas/guest.schema';
 import { Wish, WishSchema } from './schemas/wish.schema';
@@ -13,6 +14,8 @@ import { CloudinaryService } from 'src/sharedServices/cloudinary.service';
   providers: [InvitationsService, MailerService, CloudinaryService],
   exports: [InvitationsService, MailerService],
   imports: [
+    // To recognise the host when they open one of their guests' cards
+    JwtModule.register({}),
     MongooseModule.forFeatureAsync([
       {
         name: Event.name,
