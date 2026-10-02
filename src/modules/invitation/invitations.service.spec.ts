@@ -5,6 +5,7 @@ import { InvitationsService, ogImage, summarize } from './invitations.service';
 import { PublicRsvpDTO } from './dtos/rsvp.dto';
 import { CreateInvitationDTO } from './dtos/createInvitation.dto';
 import { PhotoOrderDTO } from './dtos/photo.dto';
+import { UpdateGuestDTO } from './dtos/updateGuest.dto';
 
 jest.mock('src/sharedServices/mailer.service', () => ({ MailerService: class {} }));
 
@@ -37,6 +38,7 @@ function setup({ event = { _id: EVENT, startAt: new Date(Date.now() + 86400000) 
   eventModel.updateOne = jest.fn(async () => ({ matchedCount: 1, modifiedCount: 1 }));
   const guestModel: any = {
     findOne: jest.fn(() => query(guest)),
+    findOneAndUpdate: jest.fn(() => query(guest)),
     updateOne: jest.fn(async () => ({ matchedCount: 1 })),
     create: jest.fn(async (doc) => ({ _id: 'new-guest', ...doc })),
     insertMany: jest.fn(async (docs) => docs.map((d, i) => ({ _id: `g${i}`, ...d }))),
@@ -164,13 +166,13 @@ describe('wishes', () => {
 describe('summarize', () => {
   it('counts answers and headcount', () => {
     const s = summarize([
-      { viewed: 2, rsvp: { status: 'attending', count: 2 } },
+      { viewed: 2, sentAt: new Date(), rsvp: { status: 'attending', count: 2 } },
       { viewed: 1, rsvp: { status: 'attending', count: 1 } },
       { viewed: 1, rsvp: { status: 'declined', count: 0 } },
       { viewed: 0, rsvp: { status: 'maybe', count: 1 } },
       { viewed: 0 },
     ] as any);
-    expect(s).toEqual({ invited: 5, opened: 3, attending: 2, maybe: 1, declined: 1, pending: 1, headcount: 3 });
+    expect(s).toEqual({ invited: 5, sent: 1, opened: 3, attending: 2, maybe: 1, declined: 1, pending: 1, headcount: 3 });
   });
 });
 
@@ -373,5 +375,59 @@ describe('venue screen', () => {
     expect(wishModel.find).toHaveBeenCalledWith({ event: EVENT, updatedAt: { $gte: new Date(since) } });
     expect(Date.parse(res.cursor)).toBeLessThan(Date.now());
     await expect(service.screen(EVENT, KEY, 'yesterday')).rejects.toBeInstanceOf(BadRequestException);
+  });
+});
+
+describe('guests', () => {
+  it('renames a guest of the host\'s event', async () => {
+    const { service, guestModel } = setup();
+    await service.updateGuest(EVENT, GUEST, HOST, { name: '  Cô   Ba  ' });
+    expect(guestModel.findOneAndUpdate).toHaveBeenCalledWith(
+      { _id: GUEST, event: EVENT, isDeleted: { $ne: true } },
+      { $set: { name: 'Cô Ba' } },
+      { new: true },
+    );
+  });
+
+  it('marks and unmarks the invitation as sent', async () => {
+    const { service, guestModel } = setup();
+    await service.updateGuest(EVENT, GUEST, HOST, { sent: true });
+    expect(guestModel.findOneAndUpdate.mock.calls[0][1].$set.sentAt).toBeInstanceOf(Date);
+    await service.updateGuest(EVENT, GUEST, HOST, { sent: false });
+    expect(guestModel.findOneAndUpdate.mock.calls[1][1]).toEqual({ $unset: { sentAt: 1 } });
+  });
+
+  it('refuses empty updates and blank names', async () => {
+    const { service, guestModel } = setup();
+    await expect(service.updateGuest(EVENT, GUEST, HOST, {})).rejects.toBeInstanceOf(BadRequestException);
+    await expect(service.updateGuest(EVENT, GUEST, HOST, { name: '   ' })).rejects.toBeInstanceOf(BadRequestException);
+    expect(guestModel.findOneAndUpdate).not.toHaveBeenCalled();
+  });
+
+  it('only the host can change or remove guests', async () => {
+    const { service, guestModel } = setup({ event: null });
+    await expect(service.updateGuest(EVENT, GUEST, 'someone', { sent: true })).rejects.toBeInstanceOf(NotFoundException);
+    await expect(service.removeGuest(EVENT, GUEST, 'someone')).rejects.toBeInstanceOf(NotFoundException);
+    expect(guestModel.findOneAndUpdate).not.toHaveBeenCalled();
+    expect(guestModel.updateOne).not.toHaveBeenCalled();
+  });
+
+  it('404s for a guest of another event', async () => {
+    const { service } = setup({ guest: null });
+    await expect(service.updateGuest(EVENT, GUEST, HOST, { sent: true })).rejects.toBeInstanceOf(NotFoundException);
+  });
+
+  it('removes a guest softly', async () => {
+    const { service, guestModel } = setup();
+    await service.removeGuest(EVENT, GUEST, HOST);
+    expect(guestModel.updateOne).toHaveBeenCalledWith(
+      { _id: GUEST, event: EVENT, isDeleted: { $ne: true } },
+      { $set: { isDeleted: true } },
+    );
+  });
+
+  it('validates the body', async () => {
+    const bad = plainToInstance(UpdateGuestDTO, { name: 'A'.repeat(101), sent: 'yes' });
+    expect((await validate(bad)).map(e => e.property).sort()).toEqual(['name', 'sent']);
   });
 });

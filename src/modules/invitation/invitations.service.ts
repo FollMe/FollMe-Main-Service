@@ -13,6 +13,7 @@ import Handlebars from 'handlebars';
 import { CreateInvitationDTO } from './dtos/createInvitation.dto';
 import { UpdateInvitationDTO } from './dtos/updateInvitation.dto';
 import { GuestDTO } from './dtos/guest.dto';
+import { UpdateGuestDTO } from './dtos/updateGuest.dto';
 import { GiftDTO } from './dtos/gift.dto';
 import { PublicRsvpDTO, RsvpDTO } from './dtos/rsvp.dto';
 import { WishDTO } from './dtos/wish.dto';
@@ -23,6 +24,8 @@ const template = Handlebars.compile(templateStr);
 
 // Fields of an event that guests may see (no host id, no counters).
 const PUBLIC_EVENT_FIELDS = '_id title location mapLocation startAt type theme groomName brideName message allowPublicLink music scratchDate gifts photos';
+// Fields of a guest the host sees.
+const HOST_GUEST_FIELDS = '_id name mail viewed source rsvp sentAt';
 // Fields the host can set, picked explicitly from request bodies.
 const EDITABLE_FIELDS = [
   'title', 'location', 'mapLocation', 'startAt', 'type', 'theme',
@@ -93,7 +96,7 @@ export class InvitationsService {
 
     const invitation = await this.eventModel.findOne({ isDeleted: { $ne: true }, host: userId, _id: eventId })
       .select('-isDeleted -host')
-      .populate('guests', '_id name mail viewed source rsvp');
+      .populate('guests', HOST_GUEST_FIELDS);
 
     if (!invitation) {
       throw new NotFoundException();
@@ -338,6 +341,61 @@ export class InvitationsService {
     return { _id: wish._id, name: wish.name, message: wish.message, createdAt: (wish as any).createdAt };
   }
 
+  // ---------- Guests ----------
+
+  /** Renames a guest (their link shows the new name) or marks it sent. */
+  async updateGuest(eventId: string, guestId: string, userId: string, body: UpdateGuestDTO) {
+    assertObjectId(guestId);
+    await this.hostEvent(eventId, userId, '_id');
+    const set: Record<string, unknown> = {};
+    const unset: Record<string, 1> = {};
+    if (body.name !== undefined) {
+      const name = body.name.replace(/\s+/g, ' ').trim();
+      if (!name) {
+        throw new BadRequestException('Vui lòng nhập tên khách');
+      }
+      set.name = name;
+    }
+    if (body.sent === true) {
+      set.sentAt = new Date();
+    } else if (body.sent === false) {
+      unset.sentAt = 1;
+    }
+    if (!Object.keys(set).length && !Object.keys(unset).length) {
+      throw new BadRequestException('Không có gì để cập nhật');
+    }
+    const update: Record<string, unknown> = {};
+    if (Object.keys(set).length) {
+      update.$set = set;
+    }
+    if (Object.keys(unset).length) {
+      update.$unset = unset;
+    }
+    const guest = await this.guestModel.findOneAndUpdate(
+      { _id: guestId, event: eventId, isDeleted: { $ne: true } },
+      update,
+      { new: true },
+    ).select(HOST_GUEST_FIELDS);
+    if (!guest) {
+      throw new NotFoundException();
+    }
+    return guest;
+  }
+
+  /** Removes a guest: their personal link stops working. */
+  async removeGuest(eventId: string, guestId: string, userId: string) {
+    assertObjectId(guestId);
+    await this.hostEvent(eventId, userId, '_id');
+    const res = await this.guestModel.updateOne(
+      { _id: guestId, event: eventId, isDeleted: { $ne: true } },
+      { $set: { isDeleted: true } },
+    );
+    if (!res.matchedCount) {
+      throw new NotFoundException();
+    }
+    return { _id: guestId };
+  }
+
   // ---------- Photos ----------
 
   private async hostEvent(eventId: string, userId: string, fields: string) {
@@ -530,8 +588,11 @@ function toRsvp(body: RsvpDTO) {
 
 /** Headcount for the host: who answered what, and how many are coming. */
 export function summarize(guests: Guest[]) {
-  const summary = { invited: guests.length, opened: 0, attending: 0, maybe: 0, declined: 0, pending: 0, headcount: 0 };
+  const summary = { invited: guests.length, sent: 0, opened: 0, attending: 0, maybe: 0, declined: 0, pending: 0, headcount: 0 };
   for (const guest of guests) {
+    if (guest.sentAt) {
+      summary.sent++;
+    }
     if (guest.viewed > 0) {
       summary.opened++;
     }

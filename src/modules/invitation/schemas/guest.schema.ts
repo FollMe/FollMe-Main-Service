@@ -17,6 +17,7 @@ export class Guest {
   // 'host': added by the host; 'public': answered through the public link
   source: string;
   rsvp?: Rsvp;
+  sentAt?: Date;
 }
 
 const RsvpSchema = new Schema({
@@ -34,6 +35,8 @@ export const GuestSchema = new Schema({
   isDeleted: { type: Boolean, default: false },
   source: { type: String, enum: ['host', 'public'], default: 'host' },
   rsvp: { type: RsvpSchema, default: undefined },
+  // When the host marked their personal link as sent (Zalo, Messenger...)
+  sentAt: { type: Date },
 }, { timestamps: true });
 
 export type GuestDocument = Guest & Document;

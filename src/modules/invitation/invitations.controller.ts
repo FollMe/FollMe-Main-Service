@@ -10,6 +10,7 @@ import { UpdateInvitationDTO } from './dtos/updateInvitation.dto';
 import { PublicRsvpDTO, RsvpDTO } from './dtos/rsvp.dto';
 import { WishDTO } from './dtos/wish.dto';
 import { PhotoOrderDTO } from './dtos/photo.dto';
+import { UpdateGuestDTO } from './dtos/updateGuest.dto';
 import { MAX_PHOTO_BYTES } from './invitation.constants';
 
 const photoPipe = new ParseFilePipe({
@@ -73,6 +74,18 @@ export class invitationsController {
   @UseGuards(AuthGuard("jwt"))
   async unhideWish(@Request() req, @Param('id') id: string, @Param('wishId') wishId: string) {
     return await this.invitationsService.setWishHidden(id, wishId, req.user._id, false);
+  }
+
+  @Put('events/:id/guests/:guestId')
+  @UseGuards(AuthGuard("jwt"))
+  async updateGuest(@Request() req, @Param('id') id: string, @Param('guestId') guestId: string, @Body() body: UpdateGuestDTO) {
+    return await this.invitationsService.updateGuest(id, guestId, req.user._id, body);
+  }
+
+  @Delete('events/:id/guests/:guestId')
+  @UseGuards(AuthGuard("jwt"))
+  async removeGuest(@Request() req, @Param('id') id: string, @Param('guestId') guestId: string) {
+    return await this.invitationsService.removeGuest(id, guestId, req.user._id);
   }
 
   @Post('events/:id/photos')
