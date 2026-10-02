@@ -40,6 +40,7 @@ function setup({ event = { _id: EVENT, startAt: new Date(Date.now() + 86400000) 
     findOne: jest.fn(() => query(guest)),
     findOneAndUpdate: jest.fn(() => query(guest)),
     updateOne: jest.fn(async () => ({ matchedCount: 1 })),
+    updateMany: jest.fn(async () => ({ matchedCount: 1 })),
     create: jest.fn(async (doc) => ({ _id: 'new-guest', ...doc })),
     insertMany: jest.fn(async (docs) => docs.map((d, i) => ({ _id: `g${i}`, ...d }))),
   };
@@ -47,6 +48,7 @@ function setup({ event = { _id: EVENT, startAt: new Date(Date.now() + 86400000) 
     create: jest.fn(async (doc) => ({ _id: 'w1', createdAt: new Date(), ...doc })),
     find: jest.fn(() => query([])),
     updateOne: jest.fn(async () => ({ matchedCount: 1 })),
+    updateMany: jest.fn(async () => ({ matchedCount: 1 })),
   };
   const session = { startTransaction: jest.fn(), commitTransaction: jest.fn(), abortTransaction: jest.fn(), endSession: jest.fn() };
   const connection: any = { startSession: jest.fn(async () => session) };
@@ -422,13 +424,13 @@ describe('guests', () => {
     await expect(service.updateGuest(EVENT, GUEST, HOST, { sent: true })).rejects.toBeInstanceOf(NotFoundException);
   });
 
-  it('removes a guest softly', async () => {
+  it('removes a guest softly, to be purged later', async () => {
     const { service, guestModel } = setup();
     await service.removeGuest(EVENT, GUEST, HOST);
-    expect(guestModel.updateOne).toHaveBeenCalledWith(
-      { _id: GUEST, event: EVENT, isDeleted: { $ne: true } },
-      { $set: { isDeleted: true } },
-    );
+    const [filter, update] = guestModel.updateOne.mock.calls[0];
+    expect(filter).toEqual({ _id: GUEST, event: EVENT, isDeleted: { $ne: true } });
+    expect(update.$set.isDeleted).toBe(true);
+    expect(update.$set.deletedAt).toBeInstanceOf(Date);
   });
 
   it('moves a guest into a group and out of it', async () => {
@@ -457,19 +459,24 @@ describe('remove', () => {
   const photos = [{ _id: 'p1', publicId: 'FollMe/events/e1/a' }, { _id: 'p2', publicId: 'FollMe/events/e1/b' }];
 
   it('deletes the host\'s event softly and its photos for good', async () => {
-    const { service, eventModel, cloudinary } = setup({ event: { _id: EVENT, photos } as any });
+    const { service, eventModel, guestModel, wishModel, cloudinary } = setup({ event: { _id: EVENT, photos } as any });
     expect(await service.remove(EVENT, HOST)).toEqual({ _id: EVENT });
-    expect(eventModel.findOneAndUpdate).toHaveBeenCalledWith(
-      { _id: EVENT, host: HOST, isDeleted: { $ne: true } },
-      { $set: { isDeleted: true }, $unset: { photos: 1, screenKey: 1 } },
-    );
+    const [filter, update] = eventModel.findOneAndUpdate.mock.calls[0];
+    expect(filter).toEqual({ _id: EVENT, host: HOST, isDeleted: { $ne: true } });
+    expect(update.$unset).toEqual({ photos: 1, screenKey: 1 });
+    const { deletedAt } = update.$set;
+    expect(update.$set).toEqual({ isDeleted: true, deletedAt: expect.any(Date) });
+    // Guests and wishes are purged with it
+    expect(guestModel.updateMany).toHaveBeenCalledWith({ event: EVENT, deletedAt: { $exists: false } }, { $set: { deletedAt } });
+    expect(wishModel.updateMany).toHaveBeenCalledWith({ event: EVENT }, { $set: { deletedAt } });
     expect(cloudinary.destroy.mock.calls.map(c => c[0])).toEqual(['FollMe/events/e1/a', 'FollMe/events/e1/b']);
   });
 
   it('404s for someone else\'s or an already deleted event', async () => {
-    const { service, cloudinary } = setup({ event: null });
+    const { service, cloudinary, guestModel } = setup({ event: null });
     await expect(service.remove(EVENT, 'someone')).rejects.toBeInstanceOf(NotFoundException);
     expect(cloudinary.destroy).not.toHaveBeenCalled();
+    expect(guestModel.updateMany).not.toHaveBeenCalled();
   });
 });
 

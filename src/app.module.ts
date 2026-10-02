@@ -14,6 +14,8 @@ import { Log, LogSchema } from './modules/logsConfig/schemas/log.schema';
 import { User, UserSchema } from './modules/auth/schemas/user.schema';
 import { AllExceptionsFilter } from './allException.filter';
 import { InvitationModule } from './modules/invitation/invitations.module';
+import { AppController } from './app.controller';
+import { AppService } from './app.service';
 
 @Module({
   imports: [
@@ -45,7 +47,9 @@ import { InvitationModule } from './modules/invitation/invitations.module';
       }
   ]),
   ],
+  controllers: [AppController],
   providers: [
+    AppService,
     {
       provide: APP_INTERCEPTOR,
       useClass: LoggingInterceptor,
