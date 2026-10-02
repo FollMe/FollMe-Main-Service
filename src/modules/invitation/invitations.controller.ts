@@ -81,6 +81,12 @@ export class invitationsController {
     return await this.invitationsService.update(id, req.user._id, body, req.user.slEmail);
   }
 
+  @Delete('events/:id')
+  @UseGuards(AuthGuard("jwt"))
+  async removeEvent(@Request() req, @Param('id') id: string) {
+    return await this.invitationsService.remove(id, req.user._id);
+  }
+
   @Put('events/:id/wishes/:wishId/hide')
   @UseGuards(AuthGuard("jwt"))
   async hideWish(@Request() req, @Param('id') id: string, @Param('wishId') wishId: string) {
@@ -164,8 +170,8 @@ export class invitationsController {
   // ---------- Anyone (public link) ----------
 
   @Get('events/:id/public')
-  async getPublic(@Param('id') id: string) {
-    return await this.invitationsService.findPublic(id);
+  async getPublic(@Param('id') id: string, @Headers('authorization') authorization?: string) {
+    return await this.invitationsService.findPublic(id, this.viewerId(authorization));
   }
 
   @Get('events/:id/preview')
