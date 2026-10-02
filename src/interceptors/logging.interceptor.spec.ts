@@ -9,8 +9,9 @@ describe('LoggingInterceptor.needLog', () => {
     expect(logs('GET', '/api/events/abc/screen/0123456789abcdef0123456789abcdef')).toBe(true);
   });
 
-  it('skips uptime checks and venue screen polls', () => {
+  it('skips uptime checks, error reports and venue screen polls', () => {
     expect(logs('GET', '/api/health')).toBe(false);
+    expect(logs('POST', '/api/client-errors')).toBe(false);
     expect(logs('GET', '/api/events/abc/screen/0123456789abcdef0123456789abcdef?since=2026-10-02T00%3A00%3A00.000Z')).toBe(false);
     expect(logs('HEAD', '/api/events')).toBe(false);
   });
