@@ -33,6 +33,7 @@ export class Guest {
   group?: string;
   arrivedAt?: Date;
   arrivedCount?: number;
+  table?: string;
   gift?: ReceivedGift;
 }
 
@@ -71,6 +72,8 @@ export const GuestSchema = new Schema({
   // Checked in at the reception desk, with how many people came (them included)
   arrivedAt: { type: Date },
   arrivedCount: { type: Number },
+  // Where they sit at the party ("12", "VIP"), set by the host
+  table: { type: String },
   // The host's gift ledger; only the host ever sees it
   gift: { type: ReceivedGiftSchema, default: undefined },
 }, { timestamps: true });

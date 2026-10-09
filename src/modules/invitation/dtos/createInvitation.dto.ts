@@ -1,8 +1,8 @@
 import { Type } from "class-transformer";
-import { IsNotEmpty, IsArray, ArrayMaxSize, IsOptional, IsDateString, IsIn, MaxLength, IsBoolean, ValidateNested } from "class-validator";
+import { IsNotEmpty, IsArray, ArrayMaxSize, IsOptional, IsDateString, IsIn, MaxLength, IsBoolean, ValidateNested, IsInt, Min, Max } from "class-validator";
 import { GuestDTO } from "./guest.dto";
 import { GiftDTO } from "./gift.dto";
-import { EVENT_MUSIC, EVENT_THEMES, EVENT_TYPES, MAX_GIFT_ACCOUNTS, MAX_GUESTS_PER_REQUEST } from "../invitation.constants";
+import { EVENT_MUSIC, EVENT_THEMES, EVENT_TYPES, MAX_GIFT_ACCOUNTS, MAX_GUESTS_PER_REQUEST, MAX_SEATS_PER_TABLE } from "../invitation.constants";
 
 export class CreateInvitationDTO {
   @IsNotEmpty()
@@ -53,6 +53,13 @@ export class CreateInvitationDTO {
   @IsOptional()
   @IsBoolean()
   scratchDate?: boolean;
+
+  /** Seats at each table, for the seating plan. */
+  @IsOptional()
+  @IsInt()
+  @Min(2)
+  @Max(MAX_SEATS_PER_TABLE)
+  seatsPerTable?: number;
 
   /** Bank accounts for wedding gifts; an empty list removes them. */
   @IsOptional()

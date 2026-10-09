@@ -8,6 +8,7 @@ import { PhotoOrderDTO } from './dtos/photo.dto';
 import { UpdateGuestDTO } from './dtos/updateGuest.dto';
 import { ArrivalDTO, WalkInDTO } from './dtos/desk.dto';
 import { GiftGiverDTO } from './dtos/receivedGift.dto';
+import { SeatingDTO } from './dtos/seating.dto';
 
 jest.mock('src/sharedServices/mailer.service', () => ({ MailerService: class {} }));
 
@@ -498,6 +499,58 @@ describe('reception desk', () => {
     expect(await validate(plainToInstance(ArrivalDTO, { arrived: true, count: 21 }))).toHaveLength(1);
     expect(await validate(plainToInstance(WalkInDTO, { name: 'Ba', count: 2, group: 'Bạn bố' }))).toHaveLength(0);
     expect(await validate(plainToInstance(WalkInDTO, { name: '', group: 'x'.repeat(41) }))).toHaveLength(2);
+  });
+});
+
+describe('seating', () => {
+  it('seats a guest at a tidied table, or takes them off it', async () => {
+    const { service, guestModel } = setup();
+    await service.updateGuest(EVENT, GUEST, HOST, { table: '  Bàn   3 ' });
+    await service.updateGuest(EVENT, GUEST, HOST, { table: ' ' });
+    expect(guestModel.findOneAndUpdate.mock.calls.map(c => c[1])).toEqual([{ $set: { table: 'Bàn 3' } }, { $unset: { table: 1 } }]);
+  });
+
+  it('seats many guests at once, only of this event', async () => {
+    const { service, guestModel } = setup();
+    guestModel.bulkWrite = jest.fn(async ops => ({ matchedCount: ops.length }));
+    const res = await service.seatGuests(EVENT, HOST, [{ guest: GUEST, table: ' 12 ' }, { guest: 'g2', table: '' }]);
+    expect(res).toEqual({ updated: 2 });
+    expect(guestModel.bulkWrite.mock.calls[0][0]).toEqual([
+      { updateOne: { filter: { _id: GUEST, event: EVENT, isDeleted: { $ne: true } }, update: { $set: { table: '12' } } } },
+      { updateOne: { filter: { _id: 'g2', event: EVENT, isDeleted: { $ne: true } }, update: { $unset: { table: 1 } } } },
+    ]);
+    expect(await service.seatGuests(EVENT, HOST, [])).toEqual({ updated: 0 });
+  });
+
+  it('only the host seats guests', async () => {
+    const { service, guestModel } = setup({ event: null });
+    guestModel.bulkWrite = jest.fn();
+    await expect(service.seatGuests(EVENT, 'someone', [{ guest: GUEST, table: '1' }])).rejects.toBeInstanceOf(NotFoundException);
+    expect(guestModel.bulkWrite).not.toHaveBeenCalled();
+  });
+
+  it('the desk and the guest see the table', async () => {
+    const { service, guestModel } = setup();
+    guestModel.find = jest.fn(() => query([]));
+    await service.desk(EVENT, 'c'.repeat(32));
+    expect(guestModel.find.mock.results[0].value.select.mock.calls[0][0]).toContain('table');
+  });
+
+  it('keeps seats per table among the editable fields', async () => {
+    const { service, saved } = setup();
+    await service.createOne({ title: 'A', location: 'B', seatsPerTable: 12, guests: [] } as any, HOST, 'h@x');
+    expect(saved[0].seatsPerTable).toBe(12);
+  });
+
+  it('validates tables and seats', async () => {
+    expect(await validate(plainToInstance(UpdateGuestDTO, { table: 'x'.repeat(21) }))).toHaveLength(1);
+    expect(await validate(plainToInstance(SeatingDTO, { seats: [{ guest: GUEST, table: '1' }] }))).toHaveLength(0);
+    expect(await validate(plainToInstance(SeatingDTO, { seats: [{ guest: 'nope', table: '1' }] }))).toHaveLength(1);
+    const props = async seatsPerTable => (await validate(plainToInstance(CreateInvitationDTO, { title: 'A', location: 'B', startAt: '2027-01-16T04:00:00.000Z', guests: [], seatsPerTable })))
+      .map(e => e.property);
+    expect(await props(10)).toEqual([]);
+    expect(await props(1)).toEqual(['seatsPerTable']);
+    expect(await props(31)).toEqual(['seatsPerTable']);
   });
 });
 

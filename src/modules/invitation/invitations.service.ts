@@ -19,6 +19,7 @@ import { PublicRsvpDTO, RsvpDTO } from './dtos/rsvp.dto';
 import { WishDTO } from './dtos/wish.dto';
 import { ArrivalDTO, WalkInDTO } from './dtos/desk.dto';
 import { GiftGiverDTO, ReceivedGiftDTO } from './dtos/receivedGift.dto';
+import { SeatDTO } from './dtos/seating.dto';
 import { MAX_PHOTOS, MAX_WISHES_SHOWN } from './invitation.constants';
 
 const templateStr = fs.readFileSync(path.resolve(process.cwd(), 'src/templates/sendInvitation.template.hbs')).toString('utf8')
@@ -27,13 +28,13 @@ const template = Handlebars.compile(templateStr);
 // Fields of an event that guests may see (no host id, no counters).
 const PUBLIC_EVENT_FIELDS = '_id title location mapLocation startAt type theme groomName brideName message allowPublicLink music scratchDate gifts photos';
 // Fields of a guest the host sees.
-const HOST_GUEST_FIELDS = '_id name mail viewed source rsvp sentAt remindedAt thankedAt group arrivedAt arrivedCount gift';
+const HOST_GUEST_FIELDS = '_id name mail viewed source rsvp sentAt remindedAt thankedAt group table arrivedAt arrivedCount gift';
 // Fields of a guest the reception desk sees: who is expected, who came.
-const DESK_GUEST_FIELDS = '_id name group source rsvp.status rsvp.count arrivedAt arrivedCount';
+const DESK_GUEST_FIELDS = '_id name group table source rsvp.status rsvp.count arrivedAt arrivedCount';
 // Fields the host can set, picked explicitly from request bodies.
 const EDITABLE_FIELDS = [
   'title', 'location', 'mapLocation', 'startAt', 'type', 'theme',
-  'groomName', 'brideName', 'message', 'allowPublicLink', 'music', 'scratchDate', 'gifts',
+  'groomName', 'brideName', 'message', 'allowPublicLink', 'music', 'scratchDate', 'gifts', 'seatsPerTable',
 ] as const;
 
 function pickEditable(body: CreateInvitationDTO | UpdateInvitationDTO) {
@@ -61,11 +62,13 @@ function pickGift(gift: GiftDTO) {
   };
 }
 
-/** A group name with single spaces, or undefined for none. */
+/** A group or table name with single spaces, or undefined for none. */
 function cleanGroup(group?: string) {
   const clean = group?.replace(/\s+/g, ' ').trim();
   return clean || undefined;
 }
+
+const cleanTable = cleanGroup;
 
 /** A ledger line as stored, or undefined when there is nothing in it. */
 function cleanGift(gift?: ReceivedGiftDTO | null) {
@@ -141,8 +144,9 @@ export class InvitationsService {
   async findGuest(guestId: string, viewerId?: string) {
     assertObjectId(guestId);
 
+    // Their table too: the card shows it on the day
     const guest: any = await this.guestModel.findOne({ isDeleted: { $ne: true }, _id: guestId })
-      .select('_id name event rsvp')
+      .select('_id name event rsvp table')
       .populate('event', `${PUBLIC_EVENT_FIELDS} host isDeleted`);
     const event = guest?.event;
     if (!guest || !event || event.isDeleted) {
@@ -421,6 +425,14 @@ export class InvitationsService {
         unset.group = 1;
       }
     }
+    if (body.table !== undefined) {
+      const table = cleanTable(body.table);
+      if (table) {
+        set.table = table;
+      } else {
+        unset.table = 1;
+      }
+    }
     if (body.sent === true) {
       set.sentAt = new Date();
     } else if (body.sent === false) {
@@ -479,6 +491,27 @@ export class InvitationsService {
     const guest: any = await this.guestModel.create({ event: eventId, name, group: cleanGroup(body.group), source: 'ledger', gift });
     const { _id, group, source, viewed } = guest;
     return { _id, name, group, source, viewed, gift };
+  }
+
+  /**
+   * Seats many guests at once (the automatic plan, or clearing it). Guests
+   * of another event or deleted ones are left out of the count.
+   */
+  async seatGuests(eventId: string, userId: string, seats: SeatDTO[]) {
+    await this.hostEvent(eventId, userId, '_id');
+    if (!seats.length) {
+      return { updated: 0 };
+    }
+    const res = await this.guestModel.bulkWrite(seats.map(seat => {
+      const table = cleanTable(seat.table);
+      return {
+        updateOne: {
+          filter: { _id: seat.guest, event: eventId, isDeleted: { $ne: true } },
+          update: table ? { $set: { table } } : { $unset: { table: 1 } },
+        },
+      };
+    }) as any);
+    return { updated: res.matchedCount };
   }
 
   /** Removes a guest: their personal link stops working (purged later). */
