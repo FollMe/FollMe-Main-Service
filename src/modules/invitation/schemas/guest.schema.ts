@@ -29,6 +29,7 @@ export class Guest {
   rsvp?: Rsvp;
   sentAt?: Date;
   remindedAt?: Date;
+  thankedAt?: Date;
   group?: string;
   arrivedAt?: Date;
   arrivedCount?: number;
@@ -63,6 +64,8 @@ export const GuestSchema = new Schema({
   sentAt: { type: Date },
   // When the host last sent them a reminder to answer
   remindedAt: { type: Date },
+  // When the host sent them a thank-you after the party
+  thankedAt: { type: Date },
   // Set by the host: "Nhà trai", "Nhà gái", "Bạn bè"...
   group: { type: String },
   // Checked in at the reception desk, with how many people came (them included)

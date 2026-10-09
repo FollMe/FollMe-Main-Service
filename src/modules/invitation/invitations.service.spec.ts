@@ -622,6 +622,15 @@ describe('guests', () => {
     expect(guestModel.findOneAndUpdate.mock.calls[1][1]).toEqual({ $unset: { group: 1 } });
   });
 
+  it('marks and unmarks a thank-you', async () => {
+    const { service, guestModel } = setup();
+    await service.updateGuest(EVENT, GUEST, HOST, { thanked: true });
+    expect(guestModel.findOneAndUpdate.mock.calls[0][1].$set.thankedAt).toBeInstanceOf(Date);
+    await service.updateGuest(EVENT, GUEST, HOST, { thanked: false });
+    expect(guestModel.findOneAndUpdate.mock.calls[1][1]).toEqual({ $unset: { thankedAt: 1 } });
+    expect(await validate(plainToInstance(UpdateGuestDTO, { thanked: 'yes' }))).toHaveLength(1);
+  });
+
   it('marks and unmarks a reminder', async () => {
     const { service, guestModel } = setup();
     await service.updateGuest(EVENT, GUEST, HOST, { reminded: true });
