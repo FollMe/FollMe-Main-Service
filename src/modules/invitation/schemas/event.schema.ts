@@ -19,6 +19,7 @@ export class Event {
   music?: string;
   scratchDate?: boolean;
   seatsPerTable?: number;
+  rsvpBy?: Date;
   gifts?: Gift[];
   photos?: Photo[];
   screenKey?: string;
@@ -79,6 +80,9 @@ export const EventSchema = new Schema({
   scratchDate: { type: Boolean },
   // Seats at each table, for the seating plan (unset: the page's default)
   seatsPerTable: { type: Number },
+  // Guests are asked to answer by then (the end of that day in Vietnam);
+  // answers stay open after it
+  rsvpBy: { type: Date },
   gifts: { type: [GiftSchema], default: undefined },
   photos: { type: [PhotoSchema], default: undefined },
   // Secret part of the venue screen link (shown on a TV at the party, run
