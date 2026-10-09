@@ -14,6 +14,9 @@ export const MAX_GROUP_NAME = 40;
 // The gift ledger (sổ mừng): amounts in VND
 export const MAX_GIFT_AMOUNT = 10_000_000_000;
 export const MAX_GIFT_NOTE = 100;
+// Seating: "12", "VIP", "Bàn 3 nhà trai"...
+export const MAX_TABLE_NAME = 20;
+export const MAX_SEATS_PER_TABLE = 30;
 // Deleted events, guests and wishes are kept this long (to undo a mistake
 // on request), then MongoDB removes them for good.
 export const PURGE_AFTER_SECONDS = 30 * 24 * 60 * 60;

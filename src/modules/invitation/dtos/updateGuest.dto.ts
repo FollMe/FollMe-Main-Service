@@ -1,6 +1,6 @@
 import { Type } from "class-transformer";
 import { IsBoolean, IsNotEmpty, IsOptional, IsString, MaxLength, ValidateNested } from "class-validator";
-import { MAX_GROUP_NAME } from "../invitation.constants";
+import { MAX_GROUP_NAME, MAX_TABLE_NAME } from "../invitation.constants";
 import { ReceivedGiftDTO } from "./receivedGift.dto";
 
 /**
@@ -31,6 +31,12 @@ export class UpdateGuestDTO {
   @IsString()
   @MaxLength(MAX_GROUP_NAME, { message: `Tên nhóm tối đa ${MAX_GROUP_NAME} ký tự` })
   group?: string;
+
+  /** Their table at the party; empty for none. */
+  @IsOptional()
+  @IsString()
+  @MaxLength(MAX_TABLE_NAME, { message: `Tên bàn tối đa ${MAX_TABLE_NAME} ký tự` })
+  table?: string;
 
   /** null (or nothing in it) takes the guest out of the gift ledger. */
   @IsOptional()

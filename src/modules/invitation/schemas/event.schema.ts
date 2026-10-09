@@ -18,6 +18,7 @@ export class Event {
   publicViews: number;
   music?: string;
   scratchDate?: boolean;
+  seatsPerTable?: number;
   gifts?: Gift[];
   photos?: Photo[];
   screenKey?: string;
@@ -76,6 +77,8 @@ export const EventSchema = new Schema({
   // Unset on older events: the invitation picks a default by event type.
   music: { type: String, enum: EVENT_MUSIC },
   scratchDate: { type: Boolean },
+  // Seats at each table, for the seating plan (unset: the page's default)
+  seatsPerTable: { type: Number },
   gifts: { type: [GiftSchema], default: undefined },
   photos: { type: [PhotoSchema], default: undefined },
   // Secret part of the venue screen link (shown on a TV at the party, run
