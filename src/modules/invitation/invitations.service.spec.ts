@@ -463,6 +463,24 @@ describe('reception desk', () => {
     expect(guestModel.findOneAndUpdate.mock.calls[1][1][0].$set.arrivedCount).toEqual({ $ifNull: ['$arrivedCount', 1] });
   });
 
+  it('seats a guest on the way in, or takes them off their table', async () => {
+    const { service, guestModel } = deskSetup();
+    await service.setArrival(EVENT, KEY, GUEST, { arrived: true, count: 2, table: ' 7 ' });
+    await service.setArrival(EVENT, KEY, GUEST, { arrived: true, table: '' });
+    await service.setArrival(EVENT, KEY, GUEST, { arrived: true });
+    const sets = guestModel.findOneAndUpdate.mock.calls.map(c => c[1][0].$set);
+    expect(sets[0].table).toBe('7');
+    expect(sets[1].table).toBe('$$REMOVE');
+    expect('table' in sets[2]).toBe(false);
+  });
+
+  it('seats a walk-in', async () => {
+    const { service, guestModel } = deskSetup();
+    const res: any = await service.addWalkIn(EVENT, KEY, { name: 'Ba', table: ' VIP ' });
+    expect(guestModel.create.mock.calls[0][0].table).toBe('VIP');
+    expect(res.table).toBe('VIP');
+  });
+
   it('undoes a check-in', async () => {
     const { service, guestModel } = deskSetup();
     await service.setArrival(EVENT, KEY, GUEST, { arrived: false });
