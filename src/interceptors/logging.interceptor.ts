@@ -35,8 +35,8 @@ export class LoggingInterceptor implements NestInterceptor {
       return false
     }
     // Uptime checks, error reports (stored on their own), and the venue
-    // screen polling every few seconds
-    if (request.url.startsWith('/api/health') || request.url.startsWith('/api/client-errors') || /^\/api\/events\/[^/]+\/screen\/[^/?]+\?since=/.test(request.url)) {
+    // screen and reception desk polling every few seconds
+    if (request.url.startsWith('/api/health') || request.url.startsWith('/api/client-errors') || /^\/api\/events\/[^/]+\/(screen\/[^/?]+\?since=|desk\/[^/?]+\?poll=1)/.test(request.url)) {
       return false
     }
 

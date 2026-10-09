@@ -21,6 +21,7 @@ export class Event {
   gifts?: Gift[];
   photos?: Photo[];
   screenKey?: string;
+  deskKey?: string;
   guest: any;
 }
 
@@ -80,6 +81,9 @@ export const EventSchema = new Schema({
   // Secret part of the venue screen link (shown on a TV at the party, run
   // by whoever the host sends the link to). Never sent to guests.
   screenKey: { type: String, select: false },
+  // Secret part of the reception desk link, for whoever welcomes guests at
+  // the party: sees names and groups, checks guests in. Never sent to guests.
+  deskKey: { type: String, select: false },
 }, {
   timestamps: true,
   toJSON: { virtuals: true },

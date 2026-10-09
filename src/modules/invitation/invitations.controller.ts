@@ -12,6 +12,7 @@ import { PublicRsvpDTO, RsvpDTO } from './dtos/rsvp.dto';
 import { WishDTO } from './dtos/wish.dto';
 import { PhotoOrderDTO } from './dtos/photo.dto';
 import { UpdateGuestDTO } from './dtos/updateGuest.dto';
+import { ArrivalDTO, WalkInDTO } from './dtos/desk.dto';
 import { MAX_PHOTO_BYTES } from './invitation.constants';
 
 const photoPipe = new ParseFilePipe({
@@ -135,6 +136,35 @@ export class invitationsController {
   @UseGuards(AuthGuard("jwt"))
   async screenKey(@Request() req, @Param('id') id: string, @Body('rotate') rotate?: boolean) {
     return await this.invitationsService.screenKey(id, req.user._id, rotate === true);
+  }
+
+  /** The reception desk's secret key; `rotate` replaces it (old link stops working). */
+  @Post('events/:id/desk-key')
+  @UseGuards(AuthGuard("jwt"))
+  async deskKey(@Request() req, @Param('id') id: string, @Body('rotate') rotate?: boolean) {
+    return await this.invitationsService.deskKey(id, req.user._id, rotate === true);
+  }
+
+  // ---------- Reception desk (secret link) ----------
+
+  @Get('events/:id/desk/:key')
+  async desk(@Param('id') id: string, @Param('key') key: string) {
+    return await this.invitationsService.desk(id, key);
+  }
+
+  @Put('events/:id/desk/:key/guests/:guestId')
+  async setArrival(@Param('id') id: string, @Param('key') key: string, @Param('guestId') guestId: string, @Body() body: ArrivalDTO) {
+    return await this.invitationsService.setArrival(id, key, guestId, body);
+  }
+
+  @Post('events/:id/desk/:key/guests')
+  async addWalkIn(@Param('id') id: string, @Param('key') key: string, @Body() body: WalkInDTO) {
+    return await this.invitationsService.addWalkIn(id, key, body);
+  }
+
+  @Delete('events/:id/desk/:key/guests/:guestId')
+  async removeWalkIn(@Param('id') id: string, @Param('key') key: string, @Param('guestId') guestId: string) {
+    return await this.invitationsService.removeWalkIn(id, key, guestId);
   }
 
   // ---------- Venue screen (secret link) ----------

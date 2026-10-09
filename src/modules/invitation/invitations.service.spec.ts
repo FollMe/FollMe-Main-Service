@@ -6,6 +6,7 @@ import { PublicRsvpDTO } from './dtos/rsvp.dto';
 import { CreateInvitationDTO } from './dtos/createInvitation.dto';
 import { PhotoOrderDTO } from './dtos/photo.dto';
 import { UpdateGuestDTO } from './dtos/updateGuest.dto';
+import { ArrivalDTO, WalkInDTO } from './dtos/desk.dto';
 
 jest.mock('src/sharedServices/mailer.service', () => ({ MailerService: class {} }));
 
@@ -177,7 +178,18 @@ describe('summarize', () => {
       { viewed: 0, rsvp: { status: 'maybe', count: 1 } },
       { viewed: 0 },
     ] as any);
-    expect(s).toEqual({ invited: 5, sent: 1, opened: 3, attending: 2, maybe: 1, declined: 1, pending: 1, headcount: 3 });
+    expect(s).toEqual({
+      invited: 5, sent: 1, opened: 3, attending: 2, maybe: 1, declined: 1, pending: 1, headcount: 3, arrived: 0, arrivedPeople: 0,
+    });
+  });
+
+  it('counts who came, and never waits for an answer from a walk-in', () => {
+    const s = summarize([
+      { viewed: 1, rsvp: { status: 'attending', count: 2 }, arrivedAt: new Date(), arrivedCount: 3 },
+      { viewed: 0, arrivedAt: new Date() },
+      { viewed: 0, source: 'desk', arrivedAt: new Date(), arrivedCount: 2 },
+    ] as any);
+    expect(s).toMatchObject({ invited: 3, pending: 1, headcount: 2, arrived: 3, arrivedPeople: 6 });
   });
 });
 
@@ -385,6 +397,108 @@ describe('venue screen', () => {
   });
 });
 
+describe('reception desk', () => {
+  const KEY = 'b'.repeat(32);
+
+  function deskSetup(opts = {}) {
+    const ctx = setup(opts);
+    ctx.guestModel.find = jest.fn(() => query([{ _id: GUEST, name: 'Minh' }]));
+    return ctx;
+  }
+
+  it('has its own key, separate from the screen\'s', async () => {
+    const { service, eventModel } = setup({ event: { _id: EVENT, screenKey: 'a'.repeat(32) } as any });
+    eventModel.findOne
+      .mockReturnValueOnce(query({ _id: EVENT, screenKey: 'a'.repeat(32) }))
+      .mockReturnValueOnce(query({ _id: EVENT, deskKey: KEY }));
+    expect(await service.deskKey(EVENT, HOST)).toEqual({ key: KEY });
+    expect(eventModel.findOne.mock.results[0].value.select).toHaveBeenCalledWith('_id +deskKey');
+    expect(eventModel.updateOne.mock.calls[0][0]).toMatchObject({ host: HOST, deskKey: { $exists: false } });
+
+    const rotated = setup({ event: { _id: EVENT, deskKey: KEY } as any });
+    const { key } = await rotated.service.deskKey(EVENT, HOST, true);
+    expect(key).not.toBe(KEY);
+    expect(rotated.eventModel.updateOne).toHaveBeenCalledWith(expect.objectContaining({ host: HOST }), { $set: { deskKey: key } });
+  });
+
+  it('lists the guests by the desk key, without emails or notes', async () => {
+    const { service, eventModel, guestModel } = deskSetup();
+    const res = await service.desk(EVENT, KEY);
+    expect(eventModel.findOne).toHaveBeenCalledWith(expect.objectContaining({ _id: EVENT, deskKey: KEY, isDeleted: { $ne: true } }));
+    expect(guestModel.find).toHaveBeenCalledWith({ event: EVENT, isDeleted: { $ne: true } });
+    const fields = guestModel.find.mock.results[0].value.select.mock.calls[0][0];
+    expect(fields).toContain('arrivedAt');
+    expect(fields).not.toMatch(/mail|note|viewed|\brsvp\b(?!\.)/);
+    expect(res.guests).toHaveLength(1);
+  });
+
+  it('needs the right key for everything', async () => {
+    const short = deskSetup();
+    await expect(short.service.desk(EVENT, 'short')).rejects.toBeInstanceOf(NotFoundException);
+    await expect(short.service.setArrival(EVENT, 'x', GUEST, { arrived: true })).rejects.toBeInstanceOf(NotFoundException);
+    expect(short.eventModel.findOne).not.toHaveBeenCalled();
+
+    const wrong = deskSetup({ event: null });
+    await expect(wrong.service.desk(EVENT, KEY)).rejects.toBeInstanceOf(NotFoundException);
+    await expect(wrong.service.setArrival(EVENT, KEY, GUEST, { arrived: true })).rejects.toBeInstanceOf(NotFoundException);
+    await expect(wrong.service.addWalkIn(EVENT, KEY, { name: 'Ba' })).rejects.toBeInstanceOf(NotFoundException);
+    await expect(wrong.service.removeWalkIn(EVENT, KEY, GUEST)).rejects.toBeInstanceOf(NotFoundException);
+    expect(wrong.guestModel.findOneAndUpdate).not.toHaveBeenCalled();
+    expect(wrong.guestModel.create).not.toHaveBeenCalled();
+  });
+
+  it('checks a guest of this event in, keeping the first arrival time', async () => {
+    const { service, guestModel } = deskSetup();
+    await service.setArrival(EVENT, KEY, GUEST, { arrived: true, count: 3 });
+    const [filter, update] = guestModel.findOneAndUpdate.mock.calls[0];
+    expect(filter).toEqual({ _id: GUEST, event: EVENT, isDeleted: { $ne: true } });
+    expect(update[0].$set.arrivedAt.$ifNull[0]).toBe('$arrivedAt');
+    expect(update[0].$set.arrivedCount).toBe(3);
+
+    await service.setArrival(EVENT, KEY, GUEST, { arrived: true });
+    expect(guestModel.findOneAndUpdate.mock.calls[1][1][0].$set.arrivedCount).toEqual({ $ifNull: ['$arrivedCount', 1] });
+  });
+
+  it('undoes a check-in', async () => {
+    const { service, guestModel } = deskSetup();
+    await service.setArrival(EVENT, KEY, GUEST, { arrived: false });
+    expect(guestModel.findOneAndUpdate.mock.calls[0][1]).toEqual({ $unset: { arrivedAt: 1, arrivedCount: 1 } });
+  });
+
+  it('404s for a guest of another event', async () => {
+    const { service } = deskSetup({ guest: null });
+    await expect(service.setArrival(EVENT, KEY, GUEST, { arrived: true })).rejects.toBeInstanceOf(NotFoundException);
+  });
+
+  it('adds a walk-in, checked in, and can take it back', async () => {
+    const { service, guestModel } = deskSetup();
+    const res: any = await service.addWalkIn(EVENT, KEY, { name: '  Chú   Ba ', count: 2, group: ' Bạn  bố ' });
+    const doc = guestModel.create.mock.calls[0][0];
+    expect(doc).toMatchObject({ event: EVENT, name: 'Chú Ba', group: 'Bạn bố', source: 'desk', arrivedCount: 2 });
+    expect(doc.arrivedAt).toBeInstanceOf(Date);
+    expect(res).toMatchObject({ name: 'Chú Ba', source: 'desk', arrivedCount: 2 });
+    await expect(service.addWalkIn(EVENT, KEY, { name: '   ' })).rejects.toBeInstanceOf(BadRequestException);
+
+    await service.removeWalkIn(EVENT, KEY, GUEST);
+    expect(guestModel.updateOne.mock.calls[0][0]).toMatchObject({ _id: GUEST, event: EVENT, source: 'desk' });
+    expect(guestModel.updateOne.mock.calls[0][1].$set.deletedAt).toBeInstanceOf(Date);
+  });
+
+  it('only removes walk-ins', async () => {
+    const { service, guestModel } = deskSetup();
+    guestModel.updateOne.mockResolvedValueOnce({ matchedCount: 0 });
+    await expect(service.removeWalkIn(EVENT, KEY, GUEST)).rejects.toBeInstanceOf(NotFoundException);
+  });
+
+  it('validates the bodies', async () => {
+    const bad = await validate(plainToInstance(ArrivalDTO, { arrived: 'yes', count: 0 }));
+    expect(bad.map(e => e.property).sort()).toEqual(['arrived', 'count']);
+    expect(await validate(plainToInstance(ArrivalDTO, { arrived: true, count: 21 }))).toHaveLength(1);
+    expect(await validate(plainToInstance(WalkInDTO, { name: 'Ba', count: 2, group: 'Bạn bố' }))).toHaveLength(0);
+    expect(await validate(plainToInstance(WalkInDTO, { name: '', group: 'x'.repeat(41) }))).toHaveLength(2);
+  });
+});
+
 describe('guests', () => {
   it('renames a guest of the host\'s event', async () => {
     const { service, guestModel } = setup();
@@ -463,7 +577,7 @@ describe('remove', () => {
     expect(await service.remove(EVENT, HOST)).toEqual({ _id: EVENT });
     const [filter, update] = eventModel.findOneAndUpdate.mock.calls[0];
     expect(filter).toEqual({ _id: EVENT, host: HOST, isDeleted: { $ne: true } });
-    expect(update.$unset).toEqual({ photos: 1, screenKey: 1 });
+    expect(update.$unset).toEqual({ photos: 1, screenKey: 1, deskKey: 1 });
     const { deletedAt } = update.$set;
     expect(update.$set).toEqual({ isDeleted: true, deletedAt: expect.any(Date) });
     // Guests and wishes are purged with it
