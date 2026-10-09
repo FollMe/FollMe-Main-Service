@@ -17,6 +17,7 @@ import { UpdateGuestDTO } from './dtos/updateGuest.dto';
 import { GiftDTO } from './dtos/gift.dto';
 import { PublicRsvpDTO, RsvpDTO } from './dtos/rsvp.dto';
 import { WishDTO } from './dtos/wish.dto';
+import { ArrivalDTO, WalkInDTO } from './dtos/desk.dto';
 import { MAX_PHOTOS, MAX_WISHES_SHOWN } from './invitation.constants';
 
 const templateStr = fs.readFileSync(path.resolve(process.cwd(), 'src/templates/sendInvitation.template.hbs')).toString('utf8')
@@ -25,7 +26,9 @@ const template = Handlebars.compile(templateStr);
 // Fields of an event that guests may see (no host id, no counters).
 const PUBLIC_EVENT_FIELDS = '_id title location mapLocation startAt type theme groomName brideName message allowPublicLink music scratchDate gifts photos';
 // Fields of a guest the host sees.
-const HOST_GUEST_FIELDS = '_id name mail viewed source rsvp sentAt remindedAt group';
+const HOST_GUEST_FIELDS = '_id name mail viewed source rsvp sentAt remindedAt group arrivedAt arrivedCount';
+// Fields of a guest the reception desk sees: who is expected, who came.
+const DESK_GUEST_FIELDS = '_id name group source rsvp.status rsvp.count arrivedAt arrivedCount';
 // Fields the host can set, picked explicitly from request bodies.
 const EDITABLE_FIELDS = [
   'title', 'location', 'mapLocation', 'startAt', 'type', 'theme',
@@ -230,8 +233,8 @@ export class InvitationsService {
   }
 
   /**
-   * Deletes an event: its personal links, public link and venue screen stop
-   * working, the photos are removed from Cloudinary. The event, guests,
+   * Deletes an event: its personal links, public link, venue screen and
+   * reception desk stop working, the photos are removed from Cloudinary. The event, guests,
    * answers and wishes are kept PURGE_AFTER_SECONDS (to undo a mistake on
    * request), then MongoDB removes them (TTL on deletedAt).
    */
@@ -241,7 +244,7 @@ export class InvitationsService {
     // The event as it was, to find its photos
     const event: any = await this.eventModel.findOneAndUpdate(
       { _id: eventId, host: userId, isDeleted: { $ne: true } },
-      { $set: { isDeleted: true, deletedAt }, $unset: { photos: 1, screenKey: 1 } },
+      { $set: { isDeleted: true, deletedAt }, $unset: { photos: 1, screenKey: 1, deskKey: 1 } },
     ).select('_id photos');
     if (!event) {
       throw new NotFoundException();
@@ -536,24 +539,35 @@ export class InvitationsService {
   // ---------- Venue screen ----------
 
   /**
-   * The secret key of the event's venue screen link, made on first use.
-   * `rotate` makes a new one, so the old link stops working.
+   * The secret key of a link the host hands to a helper (venue screen,
+   * reception desk), made on first use. `rotate` makes a new one, so the
+   * old link stops working.
    */
-  async screenKey(eventId: string, userId: string, rotate = false) {
-    const event = await this.hostEvent(eventId, userId, '_id +screenKey');
+  private async secretKey(field: 'screenKey' | 'deskKey', eventId: string, userId: string, rotate: boolean) {
+    const event = await this.hostEvent(eventId, userId, `_id +${field}`);
     const filter = { _id: eventId, host: userId, isDeleted: { $ne: true } };
-    if (event.screenKey && !rotate) {
-      return { key: event.screenKey };
+    if (event[field] && !rotate) {
+      return { key: event[field] as string };
     }
     const key = randomBytes(16).toString('hex');
     if (rotate) {
-      await this.eventModel.updateOne(filter, { $set: { screenKey: key } });
+      await this.eventModel.updateOne(filter, { $set: { [field]: key } });
       return { key };
     }
     // Two first requests at once must agree on one key.
-    await this.eventModel.updateOne({ ...filter, screenKey: { $exists: false } }, { $set: { screenKey: key } });
-    const saved: any = await this.eventModel.findOne(filter).select('+screenKey');
-    return { key: saved?.screenKey ?? key };
+    await this.eventModel.updateOne({ ...filter, [field]: { $exists: false } }, { $set: { [field]: key } });
+    const saved: any = await this.eventModel.findOne(filter).select(`+${field}`);
+    return { key: (saved?.[field] ?? key) as string };
+  }
+
+  /** The venue screen's secret key; `rotate` replaces it. */
+  screenKey(eventId: string, userId: string, rotate = false) {
+    return this.secretKey('screenKey', eventId, userId, rotate);
+  }
+
+  /** The reception desk's secret key; `rotate` replaces it. */
+  deskKey(eventId: string, userId: string, rotate = false) {
+    return this.secretKey('deskKey', eventId, userId, rotate);
   }
 
   /**
@@ -563,9 +577,7 @@ export class InvitationsService {
    */
   async screen(eventId: string, key: string, since?: string) {
     assertObjectId(eventId);
-    if (!/^[a-f0-9]{32}$/.test(key ?? '')) {
-      throw new NotFoundException();
-    }
+    assertKey(key);
     let sinceDate: Date | undefined;
     if (since) {
       sinceDate = new Date(since);
@@ -595,6 +607,86 @@ export class InvitationsService {
     return { wishes, cursor };
   }
 
+  // ---------- Reception desk ----------
+
+  private async deskEvent(eventId: string, key: string, fields: string) {
+    assertObjectId(eventId);
+    assertKey(key);
+    const event = await this.eventModel.findOne({ _id: eventId, isDeleted: { $ne: true }, deskKey: key }).select(fields);
+    if (!event) {
+      throw new NotFoundException();
+    }
+    return event;
+  }
+
+  /** What the reception desk shows: the event, and every guest with their answer and check-in. */
+  async desk(eventId: string, key: string) {
+    const event = await this.deskEvent(eventId, key, '_id title type groomName brideName startAt location');
+    const guests = await this.guestModel.find({ event: eventId, isDeleted: { $ne: true } })
+      .sort({ _id: 1 })
+      .select(DESK_GUEST_FIELDS);
+    return { event, guests };
+  }
+
+  /**
+   * Checks a guest in with how many people came, or undoes it. Checking in
+   * again only changes the count: the arrival time stays the first one.
+   */
+  async setArrival(eventId: string, key: string, guestId: string, body: ArrivalDTO) {
+    assertObjectId(guestId);
+    await this.deskEvent(eventId, key, '_id');
+    const update = body.arrived
+      ? [{
+        $set: {
+          arrivedAt: { $ifNull: ['$arrivedAt', new Date()] },
+          arrivedCount: body.count ?? { $ifNull: ['$arrivedCount', 1] },
+        },
+      }]
+      : { $unset: { arrivedAt: 1, arrivedCount: 1 } };
+    const guest = await this.guestModel.findOneAndUpdate(
+      { _id: guestId, event: eventId, isDeleted: { $ne: true } },
+      update as any,
+      { new: true },
+    ).select(DESK_GUEST_FIELDS);
+    if (!guest) {
+      throw new NotFoundException();
+    }
+    return guest;
+  }
+
+  /** Someone not on the list came: added as a guest, already checked in. */
+  async addWalkIn(eventId: string, key: string, body: WalkInDTO) {
+    await this.deskEvent(eventId, key, '_id');
+    const name = body.name.replace(/\s+/g, ' ').trim();
+    if (!name) {
+      throw new BadRequestException('Vui lòng nhập tên khách');
+    }
+    const guest: any = await this.guestModel.create({
+      event: eventId,
+      name,
+      group: cleanGroup(body.group),
+      source: 'desk',
+      arrivedAt: new Date(),
+      arrivedCount: body.count ?? 1,
+    });
+    const { _id, group, source, arrivedAt, arrivedCount } = guest;
+    return { _id, name, group, source, arrivedAt, arrivedCount };
+  }
+
+  /** Takes back a walk-in added by mistake. Guests from the host's list are only un-checked. */
+  async removeWalkIn(eventId: string, key: string, guestId: string) {
+    assertObjectId(guestId);
+    await this.deskEvent(eventId, key, '_id');
+    const res = await this.guestModel.updateOne(
+      { _id: guestId, event: eventId, source: 'desk', isDeleted: { $ne: true } },
+      { $set: { isDeleted: true, deletedAt: new Date() } },
+    );
+    if (!res.matchedCount) {
+      throw new NotFoundException();
+    }
+    return { _id: guestId };
+  }
+
   async setWishHidden(eventId: string, wishId: string, userId: string, isHidden: boolean) {
     assertObjectId(eventId);
     assertObjectId(wishId);
@@ -611,6 +703,13 @@ export class InvitationsService {
 }
 
 const SCREEN_POLL_OVERLAP_MS = 5000;
+
+/** Keys of helper links are 32 hex characters; anything else is unknown. */
+function assertKey(key?: string) {
+  if (!/^[a-f0-9]{32}$/.test(key ?? '')) {
+    throw new NotFoundException();
+  }
+}
 
 /**
  * A Cloudinary photo cropped to the 1200x630 link preview size, keeping
@@ -642,9 +741,12 @@ function toRsvp(body: RsvpDTO) {
   };
 }
 
-/** Headcount for the host: who answered what, and how many are coming. */
+/** Headcount for the host: who answered what, how many are coming, how many came. */
 export function summarize(guests: Guest[]) {
-  const summary = { invited: guests.length, sent: 0, opened: 0, attending: 0, maybe: 0, declined: 0, pending: 0, headcount: 0 };
+  const summary = {
+    invited: guests.length, sent: 0, opened: 0, attending: 0, maybe: 0, declined: 0, pending: 0, headcount: 0,
+    arrived: 0, arrivedPeople: 0,
+  };
   for (const guest of guests) {
     if (guest.sentAt) {
       summary.sent++;
@@ -655,11 +757,16 @@ export function summarize(guests: Guest[]) {
     const status = guest.rsvp?.status;
     if (status === 'attending' || status === 'maybe' || status === 'declined') {
       summary[status]++;
-    } else {
+    } else if (guest.source !== 'desk') {
+      // Walk-ins added at the desk were never asked
       summary.pending++;
     }
     if (status === 'attending') {
       summary.headcount += guest.rsvp.count || 1;
+    }
+    if (guest.arrivedAt) {
+      summary.arrived++;
+      summary.arrivedPeople += guest.arrivedCount || 1;
     }
   }
   return summary;

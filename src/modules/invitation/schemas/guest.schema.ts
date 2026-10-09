@@ -15,12 +15,15 @@ export class Guest {
   event: string;
   isDeleted: boolean;
   deletedAt?: Date;
-  // 'host': added by the host; 'public': answered through the public link
+  // 'host': added by the host; 'public': answered through the public link;
+  // 'desk': not on the list, added at the reception desk on the day
   source: string;
   rsvp?: Rsvp;
   sentAt?: Date;
   remindedAt?: Date;
   group?: string;
+  arrivedAt?: Date;
+  arrivedCount?: number;
 }
 
 const RsvpSchema = new Schema({
@@ -38,7 +41,7 @@ export const GuestSchema = new Schema({
   isDeleted: { type: Boolean, default: false },
   // Set when the guest or their event is deleted: removed for good later
   deletedAt: { type: Date },
-  source: { type: String, enum: ['host', 'public'], default: 'host' },
+  source: { type: String, enum: ['host', 'public', 'desk'], default: 'host' },
   rsvp: { type: RsvpSchema, default: undefined },
   // When the host marked their personal link as sent (Zalo, Messenger...)
   sentAt: { type: Date },
@@ -46,6 +49,9 @@ export const GuestSchema = new Schema({
   remindedAt: { type: Date },
   // Set by the host: "Nhà trai", "Nhà gái", "Bạn bè"...
   group: { type: String },
+  // Checked in at the reception desk, with how many people came (them included)
+  arrivedAt: { type: Date },
+  arrivedCount: { type: Number },
 }, { timestamps: true });
 
 // The host's list and every count of an event's guests
