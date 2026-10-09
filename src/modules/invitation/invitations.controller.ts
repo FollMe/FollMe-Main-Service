@@ -13,6 +13,7 @@ import { WishDTO } from './dtos/wish.dto';
 import { PhotoOrderDTO } from './dtos/photo.dto';
 import { UpdateGuestDTO } from './dtos/updateGuest.dto';
 import { ArrivalDTO, WalkInDTO } from './dtos/desk.dto';
+import { GiftGiverDTO } from './dtos/receivedGift.dto';
 import { MAX_PHOTO_BYTES } from './invitation.constants';
 
 const photoPipe = new ParseFilePipe({
@@ -104,6 +105,13 @@ export class invitationsController {
   @UseGuards(AuthGuard("jwt"))
   async updateGuest(@Request() req, @Param('id') id: string, @Param('guestId') guestId: string, @Body() body: UpdateGuestDTO) {
     return await this.invitationsService.updateGuest(id, guestId, req.user._id, body);
+  }
+
+  /** The gift ledger: someone not on the list gave a gift. */
+  @Post('events/:id/gift-givers')
+  @UseGuards(AuthGuard("jwt"))
+  async addGiftGiver(@Request() req, @Param('id') id: string, @Body() body: GiftGiverDTO) {
+    return await this.invitationsService.addGiftGiver(id, req.user._id, body);
   }
 
   @Delete('events/:id/guests/:guestId')

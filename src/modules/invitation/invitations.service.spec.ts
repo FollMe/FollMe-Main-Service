@@ -7,6 +7,7 @@ import { CreateInvitationDTO } from './dtos/createInvitation.dto';
 import { PhotoOrderDTO } from './dtos/photo.dto';
 import { UpdateGuestDTO } from './dtos/updateGuest.dto';
 import { ArrivalDTO, WalkInDTO } from './dtos/desk.dto';
+import { GiftGiverDTO } from './dtos/receivedGift.dto';
 
 jest.mock('src/sharedServices/mailer.service', () => ({ MailerService: class {} }));
 
@@ -180,6 +181,7 @@ describe('summarize', () => {
     ] as any);
     expect(s).toEqual({
       invited: 5, sent: 1, opened: 3, attending: 2, maybe: 1, declined: 1, pending: 1, headcount: 3, arrived: 0, arrivedPeople: 0,
+      gifts: 0, giftTotal: 0,
     });
   });
 
@@ -496,6 +498,71 @@ describe('reception desk', () => {
     expect(await validate(plainToInstance(ArrivalDTO, { arrived: true, count: 21 }))).toHaveLength(1);
     expect(await validate(plainToInstance(WalkInDTO, { name: 'Ba', count: 2, group: 'Bạn bố' }))).toHaveLength(0);
     expect(await validate(plainToInstance(WalkInDTO, { name: '', group: 'x'.repeat(41) }))).toHaveLength(2);
+  });
+});
+
+describe('gift ledger', () => {
+  it('writes what a guest gave, tidied, with the time', async () => {
+    const { service, guestModel } = setup();
+    await service.updateGuest(EVENT, GUEST, HOST, { gift: { amount: 500000, note: '  kèm   thiệp ' } });
+    const [filter, update] = guestModel.findOneAndUpdate.mock.calls[0];
+    expect(filter).toMatchObject({ _id: GUEST, event: EVENT });
+    expect(update.$set.gift).toEqual({ amount: 500000, note: 'kèm thiệp', at: expect.any(Date) });
+  });
+
+  it('keeps a gift that is not money as a note', async () => {
+    const { service, guestModel } = setup();
+    await service.updateGuest(EVENT, GUEST, HOST, { gift: { amount: 0, note: '1 chỉ vàng' } });
+    expect(guestModel.findOneAndUpdate.mock.calls[0][1].$set.gift).toEqual({ amount: undefined, note: '1 chỉ vàng', at: expect.any(Date) });
+  });
+
+  it('takes a guest out of the ledger with null or an empty line', async () => {
+    const { service, guestModel } = setup();
+    await service.updateGuest(EVENT, GUEST, HOST, { gift: null });
+    await service.updateGuest(EVENT, GUEST, HOST, { gift: { note: '  ' } });
+    expect(guestModel.findOneAndUpdate.mock.calls.map(c => c[1])).toEqual([{ $unset: { gift: 1 } }, { $unset: { gift: 1 } }]);
+  });
+
+  it('only the host writes it, and the host list carries it', async () => {
+    const other = setup({ event: null });
+    await expect(other.service.updateGuest(EVENT, GUEST, 'someone', { gift: { amount: 1 } })).rejects.toBeInstanceOf(NotFoundException);
+    expect(other.guestModel.findOneAndUpdate).not.toHaveBeenCalled();
+    const { service, guestModel } = setup();
+    await service.updateGuest(EVENT, GUEST, HOST, { gift: { amount: 1 } });
+    expect(guestModel.findOneAndUpdate.mock.results[0].value.select).toHaveBeenCalledWith(expect.stringContaining('gift'));
+  });
+
+  it('adds a giver who is not on the list, with nothing to send them', async () => {
+    const { service, guestModel } = setup();
+    const res: any = await service.addGiftGiver(EVENT, HOST, { name: ' Cô  Sáu ', group: 'Nhà gái', gift: { amount: 1000000 } });
+    expect(guestModel.create.mock.calls[0][0]).toMatchObject({ event: EVENT, name: 'Cô Sáu', group: 'Nhà gái', source: 'ledger', gift: { amount: 1000000 } });
+    expect(res).toMatchObject({ name: 'Cô Sáu', source: 'ledger', gift: { amount: 1000000 } });
+    await expect(service.addGiftGiver(EVENT, HOST, { name: 'Ba', gift: {} })).rejects.toBeInstanceOf(BadRequestException);
+    await expect(service.addGiftGiver(EVENT, HOST, { name: '  ', gift: { amount: 1 } })).rejects.toBeInstanceOf(BadRequestException);
+    const other = setup({ event: null });
+    await expect(other.service.addGiftGiver(EVENT, 'someone', { name: 'Ba', gift: { amount: 1 } })).rejects.toBeInstanceOf(NotFoundException);
+  });
+
+  it('sums the ledger; givers added later are never waited on', () => {
+    const s = summarize([
+      { viewed: 0, gift: { amount: 500000 } },
+      { viewed: 0, source: 'ledger', gift: { amount: 1000000 } },
+      { viewed: 0, source: 'ledger', gift: { note: '1 chỉ vàng' } },
+      { viewed: 0 },
+    ] as any);
+    // The first was invited and never answered: still waited on
+    expect(s).toMatchObject({ gifts: 3, giftTotal: 1500000, pending: 2 });
+  });
+
+  it('validates amounts and notes', async () => {
+    const ok = await validate(plainToInstance(UpdateGuestDTO, { gift: { amount: 500000, note: 'Chuyển khoản' } }));
+    expect(ok).toHaveLength(0);
+    expect(await validate(plainToInstance(UpdateGuestDTO, { gift: null }))).toHaveLength(0);
+    for (const gift of [{ amount: 1.5 }, { amount: -1 }, { amount: 2e10 }, { amount: '500k' }, { note: 'x'.repeat(101) }]) {
+      expect(await validate(plainToInstance(UpdateGuestDTO, { gift }))).toHaveLength(1);
+    }
+    expect(await validate(plainToInstance(GiftGiverDTO, { name: 'Ba' }))).not.toHaveLength(0);
+    expect(await validate(plainToInstance(GiftGiverDTO, { name: 'Ba', gift: { amount: 200000 } }))).toHaveLength(0);
   });
 });
 

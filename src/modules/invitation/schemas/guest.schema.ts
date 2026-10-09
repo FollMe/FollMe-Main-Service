@@ -8,6 +8,13 @@ export class Rsvp {
   respondedAt: Date;
 }
 
+/** What a guest gave, as the host wrote it in their gift ledger (sổ mừng). */
+export class ReceivedGift {
+  amount?: number;
+  note?: string;
+  at: Date;
+}
+
 export class Guest {
   name: string;
   mail: string;
@@ -16,7 +23,8 @@ export class Guest {
   isDeleted: boolean;
   deletedAt?: Date;
   // 'host': added by the host; 'public': answered through the public link;
-  // 'desk': not on the list, added at the reception desk on the day
+  // 'desk': not on the list, added at the reception desk on the day;
+  // 'ledger': not on the list, added by the host to record their gift
   source: string;
   rsvp?: Rsvp;
   sentAt?: Date;
@@ -24,6 +32,7 @@ export class Guest {
   group?: string;
   arrivedAt?: Date;
   arrivedCount?: number;
+  gift?: ReceivedGift;
 }
 
 const RsvpSchema = new Schema({
@@ -31,6 +40,13 @@ const RsvpSchema = new Schema({
   count: { type: Number, default: 1 },
   note: { type: String, default: '' },
   respondedAt: { type: Date },
+}, { _id: false });
+
+const ReceivedGiftSchema = new Schema({
+  // VND; none for a gift that is not money ("1 chỉ vàng")
+  amount: { type: Number },
+  note: { type: String },
+  at: { type: Date, required: true },
 }, { _id: false });
 
 export const GuestSchema = new Schema({
@@ -41,7 +57,7 @@ export const GuestSchema = new Schema({
   isDeleted: { type: Boolean, default: false },
   // Set when the guest or their event is deleted: removed for good later
   deletedAt: { type: Date },
-  source: { type: String, enum: ['host', 'public', 'desk'], default: 'host' },
+  source: { type: String, enum: ['host', 'public', 'desk', 'ledger'], default: 'host' },
   rsvp: { type: RsvpSchema, default: undefined },
   // When the host marked their personal link as sent (Zalo, Messenger...)
   sentAt: { type: Date },
@@ -52,6 +68,8 @@ export const GuestSchema = new Schema({
   // Checked in at the reception desk, with how many people came (them included)
   arrivedAt: { type: Date },
   arrivedCount: { type: Number },
+  // The host's gift ledger; only the host ever sees it
+  gift: { type: ReceivedGiftSchema, default: undefined },
 }, { timestamps: true });
 
 // The host's list and every count of an event's guests
