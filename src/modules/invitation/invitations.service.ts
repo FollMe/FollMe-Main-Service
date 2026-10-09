@@ -18,6 +18,7 @@ import { GiftDTO } from './dtos/gift.dto';
 import { PublicRsvpDTO, RsvpDTO } from './dtos/rsvp.dto';
 import { WishDTO } from './dtos/wish.dto';
 import { ArrivalDTO, WalkInDTO } from './dtos/desk.dto';
+import { GiftGiverDTO, ReceivedGiftDTO } from './dtos/receivedGift.dto';
 import { MAX_PHOTOS, MAX_WISHES_SHOWN } from './invitation.constants';
 
 const templateStr = fs.readFileSync(path.resolve(process.cwd(), 'src/templates/sendInvitation.template.hbs')).toString('utf8')
@@ -26,7 +27,7 @@ const template = Handlebars.compile(templateStr);
 // Fields of an event that guests may see (no host id, no counters).
 const PUBLIC_EVENT_FIELDS = '_id title location mapLocation startAt type theme groomName brideName message allowPublicLink music scratchDate gifts photos';
 // Fields of a guest the host sees.
-const HOST_GUEST_FIELDS = '_id name mail viewed source rsvp sentAt remindedAt group arrivedAt arrivedCount';
+const HOST_GUEST_FIELDS = '_id name mail viewed source rsvp sentAt remindedAt group arrivedAt arrivedCount gift';
 // Fields of a guest the reception desk sees: who is expected, who came.
 const DESK_GUEST_FIELDS = '_id name group source rsvp.status rsvp.count arrivedAt arrivedCount';
 // Fields the host can set, picked explicitly from request bodies.
@@ -64,6 +65,16 @@ function pickGift(gift: GiftDTO) {
 function cleanGroup(group?: string) {
   const clean = group?.replace(/\s+/g, ' ').trim();
   return clean || undefined;
+}
+
+/** A ledger line as stored, or undefined when there is nothing in it. */
+function cleanGift(gift?: ReceivedGiftDTO | null) {
+  const note = gift?.note?.replace(/\s+/g, ' ').trim();
+  const amount = gift?.amount || undefined;
+  if (!amount && !note) {
+    return undefined;
+  }
+  return { amount, note: note || undefined, at: new Date() };
 }
 
 function assertObjectId(id: string) {
@@ -420,6 +431,14 @@ export class InvitationsService {
     } else if (body.reminded === false) {
       unset.remindedAt = 1;
     }
+    if (body.gift !== undefined) {
+      const gift = cleanGift(body.gift);
+      if (gift) {
+        set.gift = gift;
+      } else {
+        unset.gift = 1;
+      }
+    }
     if (!Object.keys(set).length && !Object.keys(unset).length) {
       throw new BadRequestException('Không có gì để cập nhật');
     }
@@ -439,6 +458,22 @@ export class InvitationsService {
       throw new NotFoundException();
     }
     return guest;
+  }
+
+  /** Writes the gift of someone who is not on the list: they join it, without a link to send. */
+  async addGiftGiver(eventId: string, userId: string, body: GiftGiverDTO) {
+    await this.hostEvent(eventId, userId, '_id');
+    const name = body.name.replace(/\s+/g, ' ').trim();
+    if (!name) {
+      throw new BadRequestException('Vui lòng nhập tên người mừng');
+    }
+    const gift = cleanGift(body.gift);
+    if (!gift) {
+      throw new BadRequestException('Vui lòng nhập số tiền hoặc ghi chú');
+    }
+    const guest: any = await this.guestModel.create({ event: eventId, name, group: cleanGroup(body.group), source: 'ledger', gift });
+    const { _id, group, source, viewed } = guest;
+    return { _id, name, group, source, viewed, gift };
   }
 
   /** Removes a guest: their personal link stops working (purged later). */
@@ -745,7 +780,7 @@ function toRsvp(body: RsvpDTO) {
 export function summarize(guests: Guest[]) {
   const summary = {
     invited: guests.length, sent: 0, opened: 0, attending: 0, maybe: 0, declined: 0, pending: 0, headcount: 0,
-    arrived: 0, arrivedPeople: 0,
+    arrived: 0, arrivedPeople: 0, gifts: 0, giftTotal: 0,
   };
   for (const guest of guests) {
     if (guest.sentAt) {
@@ -757,8 +792,8 @@ export function summarize(guests: Guest[]) {
     const status = guest.rsvp?.status;
     if (status === 'attending' || status === 'maybe' || status === 'declined') {
       summary[status]++;
-    } else if (guest.source !== 'desk') {
-      // Walk-ins added at the desk were never asked
+    } else if (!guest.source || guest.source === 'host') {
+      // Walk-ins and gift givers added later were never asked
       summary.pending++;
     }
     if (status === 'attending') {
@@ -767,6 +802,10 @@ export function summarize(guests: Guest[]) {
     if (guest.arrivedAt) {
       summary.arrived++;
       summary.arrivedPeople += guest.arrivedCount || 1;
+    }
+    if (guest.gift) {
+      summary.gifts++;
+      summary.giftTotal += guest.gift.amount || 0;
     }
   }
   return summary;

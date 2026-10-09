@@ -1,7 +1,12 @@
-import { IsBoolean, IsNotEmpty, IsOptional, IsString, MaxLength } from "class-validator";
+import { Type } from "class-transformer";
+import { IsBoolean, IsNotEmpty, IsOptional, IsString, MaxLength, ValidateNested } from "class-validator";
 import { MAX_GROUP_NAME } from "../invitation.constants";
+import { ReceivedGiftDTO } from "./receivedGift.dto";
 
-/** The host fixes a guest's name or group, or marks their invitation or reminder sent. */
+/**
+ * The host fixes a guest's name or group, marks their invitation or
+ * reminder sent, or writes what they gave in the gift ledger.
+ */
 export class UpdateGuestDTO {
   @IsOptional()
   @IsString()
@@ -22,4 +27,10 @@ export class UpdateGuestDTO {
   @IsString()
   @MaxLength(MAX_GROUP_NAME, { message: `Tên nhóm tối đa ${MAX_GROUP_NAME} ký tự` })
   group?: string;
+
+  /** null (or nothing in it) takes the guest out of the gift ledger. */
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => ReceivedGiftDTO)
+  gift?: ReceivedGiftDTO | null;
 }

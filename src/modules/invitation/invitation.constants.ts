@@ -11,6 +11,9 @@ export const MAX_GIFT_ACCOUNTS = 2;
 export const MAX_PHOTOS = 12;
 export const MAX_PHOTO_BYTES = 6 * 1024 * 1024;
 export const MAX_GROUP_NAME = 40;
+// The gift ledger (sổ mừng): amounts in VND
+export const MAX_GIFT_AMOUNT = 10_000_000_000;
+export const MAX_GIFT_NOTE = 100;
 // Deleted events, guests and wishes are kept this long (to undo a mistake
 // on request), then MongoDB removes them for good.
 export const PURGE_AFTER_SECONDS = 30 * 24 * 60 * 60;
