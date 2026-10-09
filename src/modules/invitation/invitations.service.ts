@@ -694,7 +694,7 @@ export class InvitationsService {
 
   /** What the reception desk shows: the event, and every guest with their answer and check-in. */
   async desk(eventId: string, key: string) {
-    const event = await this.deskEvent(eventId, key, '_id title type groomName brideName startAt location');
+    const event = await this.deskEvent(eventId, key, '_id title type groomName brideName startAt location seatsPerTable');
     const guests = await this.guestModel.find({ event: eventId, isDeleted: { $ne: true } })
       .sort({ _id: 1 })
       .select(DESK_GUEST_FIELDS);
@@ -708,11 +708,13 @@ export class InvitationsService {
   async setArrival(eventId: string, key: string, guestId: string, body: ArrivalDTO) {
     assertObjectId(guestId);
     await this.deskEvent(eventId, key, '_id');
+    const seat = body.table === undefined ? {} : { table: cleanTable(body.table) ?? '$$REMOVE' };
     const update = body.arrived
       ? [{
         $set: {
           arrivedAt: { $ifNull: ['$arrivedAt', new Date()] },
           arrivedCount: body.count ?? { $ifNull: ['$arrivedCount', 1] },
+          ...seat,
         },
       }]
       : { $unset: { arrivedAt: 1, arrivedCount: 1 } };
@@ -739,11 +741,12 @@ export class InvitationsService {
       name,
       group: cleanGroup(body.group),
       source: 'desk',
+      table: cleanTable(body.table),
       arrivedAt: new Date(),
       arrivedCount: body.count ?? 1,
     });
-    const { _id, group, source, arrivedAt, arrivedCount } = guest;
-    return { _id, name, group, source, arrivedAt, arrivedCount };
+    const { _id, group, table, source, arrivedAt, arrivedCount } = guest;
+    return { _id, name, group, table, source, arrivedAt, arrivedCount };
   }
 
   /** Takes back a walk-in added by mistake. Guests from the host's list are only un-checked. */
