@@ -54,6 +54,11 @@ export class CreateInvitationDTO {
   @IsBoolean()
   scratchDate?: boolean;
 
+  /** Answer by this date; null clears it. */
+  @IsOptional()
+  @IsDateString()
+  rsvpBy?: string | null;
+
   /** Seats at each table, for the seating plan. */
   @IsOptional()
   @IsInt()

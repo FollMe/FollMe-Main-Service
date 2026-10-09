@@ -4,6 +4,7 @@ import { validate } from 'class-validator';
 import { InvitationsService, ogImage, summarize } from './invitations.service';
 import { PublicRsvpDTO } from './dtos/rsvp.dto';
 import { CreateInvitationDTO } from './dtos/createInvitation.dto';
+import { UpdateInvitationDTO } from './dtos/updateInvitation.dto';
 import { PhotoOrderDTO } from './dtos/photo.dto';
 import { UpdateGuestDTO } from './dtos/updateGuest.dto';
 import { ArrivalDTO, WalkInDTO } from './dtos/desk.dto';
@@ -534,6 +535,17 @@ describe('seating', () => {
     guestModel.find = jest.fn(() => query([]));
     await service.desk(EVENT, 'c'.repeat(32));
     expect(guestModel.find.mock.results[0].value.select.mock.calls[0][0]).toContain('table');
+  });
+
+  it('keeps and clears the answer-by date', async () => {
+    const { service, saved, eventModel } = setup();
+    await service.createOne({ title: 'A', location: 'B', rsvpBy: '2027-01-09T16:59:59.000Z', guests: [] } as any, HOST, 'h@x');
+    expect(saved[0].rsvpBy).toBe('2027-01-09T16:59:59.000Z');
+    await service.update(EVENT, HOST, { rsvpBy: null } as any, 'h@x');
+    expect(eventModel.findOneAndUpdate.mock.calls[0][1].$set).toEqual({ rsvpBy: null });
+    const props = async rsvpBy => (await validate(plainToInstance(UpdateInvitationDTO, { rsvpBy }))).map(e => e.property);
+    expect(await props(null)).toEqual([]);
+    expect(await props('09/01/2027')).toEqual(['rsvpBy']);
   });
 
   it('keeps seats per table among the editable fields', async () => {
