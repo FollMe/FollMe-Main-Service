@@ -27,7 +27,7 @@ const template = Handlebars.compile(templateStr);
 // Fields of an event that guests may see (no host id, no counters).
 const PUBLIC_EVENT_FIELDS = '_id title location mapLocation startAt type theme groomName brideName message allowPublicLink music scratchDate gifts photos';
 // Fields of a guest the host sees.
-const HOST_GUEST_FIELDS = '_id name mail viewed source rsvp sentAt remindedAt group arrivedAt arrivedCount gift';
+const HOST_GUEST_FIELDS = '_id name mail viewed source rsvp sentAt remindedAt thankedAt group arrivedAt arrivedCount gift';
 // Fields of a guest the reception desk sees: who is expected, who came.
 const DESK_GUEST_FIELDS = '_id name group source rsvp.status rsvp.count arrivedAt arrivedCount';
 // Fields the host can set, picked explicitly from request bodies.
@@ -400,7 +400,7 @@ export class InvitationsService {
 
   // ---------- Guests ----------
 
-  /** Renames or regroups a guest (their link shows the new name), marks it sent or reminded. */
+  /** Renames or regroups a guest (their link shows the new name), marks it sent, reminded or thanked. */
   async updateGuest(eventId: string, guestId: string, userId: string, body: UpdateGuestDTO) {
     assertObjectId(guestId);
     await this.hostEvent(eventId, userId, '_id');
@@ -430,6 +430,11 @@ export class InvitationsService {
       set.remindedAt = new Date();
     } else if (body.reminded === false) {
       unset.remindedAt = 1;
+    }
+    if (body.thanked === true) {
+      set.thankedAt = new Date();
+    } else if (body.thanked === false) {
+      unset.thankedAt = 1;
     }
     if (body.gift !== undefined) {
       const gift = cleanGift(body.gift);

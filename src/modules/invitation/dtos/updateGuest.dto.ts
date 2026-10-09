@@ -4,8 +4,8 @@ import { MAX_GROUP_NAME } from "../invitation.constants";
 import { ReceivedGiftDTO } from "./receivedGift.dto";
 
 /**
- * The host fixes a guest's name or group, marks their invitation or
- * reminder sent, or writes what they gave in the gift ledger.
+ * The host fixes a guest's name or group, marks their invitation, reminder
+ * or thank-you sent, or writes what they gave in the gift ledger.
  */
 export class UpdateGuestDTO {
   @IsOptional()
@@ -21,6 +21,10 @@ export class UpdateGuestDTO {
   @IsOptional()
   @IsBoolean()
   reminded?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  thanked?: boolean;
 
   /** Empty to take the guest out of their group. */
   @IsOptional()
