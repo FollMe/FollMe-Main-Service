@@ -241,6 +241,8 @@ describe('CreateInvitationDTO', () => {
   it('rejects unknown types and themes', async () => {
     const dto = plainToInstance(CreateInvitationDTO, { title: 'T', location: 'L', startAt: '2027-01-01T00:00:00Z', type: 'funeral', theme: 'neon' });
     expect((await validate(dto)).map(e => e.property).sort()).toEqual(['theme', 'type']);
+    const garden = plainToInstance(CreateInvitationDTO, { title: 'T', location: 'L', startAt: '2027-01-01T00:00:00Z', theme: 'garden', guests: [] });
+    expect(await validate(garden)).toEqual([]);
   });
 });
 
