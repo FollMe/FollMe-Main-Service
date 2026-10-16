@@ -28,6 +28,12 @@ export class RsvpDTO {
   @IsString()
   @MaxLength(MAX_SONG, { message: `Tên bài hát tối đa ${MAX_SONG} ký tự` })
   song?: string;
+
+  /** The bus they take (one of the event's shuttles), for everyone coming; empty for none. */
+  @IsOptional()
+  @IsString()
+  @MaxLength(24)
+  shuttle?: string;
 }
 
 /** RSVP through the public link: the guest says who they are. */

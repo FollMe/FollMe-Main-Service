@@ -4,7 +4,8 @@ import { GuestDTO } from "./guest.dto";
 import { GiftDTO } from "./gift.dto";
 import { ProgramItemDTO } from "./program.dto";
 import { StoryItemDTO } from "./story.dto";
-import { EVENT_MUSIC, EVENT_THEMES, EVENT_TYPES, MAX_GIFT_ACCOUNTS, MAX_GIFT_AMOUNT, MAX_GUESTS_PER_REQUEST, MAX_PROGRAM_ITEMS, MAX_SEATS_PER_TABLE, MAX_STORY_ITEMS } from "../invitation.constants";
+import { ShuttleDTO } from "./shuttle.dto";
+import { EVENT_MUSIC, EVENT_THEMES, EVENT_TYPES, MAX_GIFT_ACCOUNTS, MAX_GIFT_AMOUNT, MAX_GUESTS_PER_REQUEST, MAX_PROGRAM_ITEMS, MAX_SEATS_PER_TABLE, MAX_SHUTTLES, MAX_STORY_ITEMS } from "../invitation.constants";
 
 /** Every field is optional; only the given ones change. */
 export class UpdateInvitationDTO {
@@ -108,6 +109,14 @@ export class UpdateInvitationDTO {
   @ValidateNested({ each: true })
   @Type(() => StoryItemDTO)
   story?: StoryItemDTO[];
+
+  /** Buses for guests, in the host's order; an empty list removes them. */
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(MAX_SHUTTLES, { message: `Tối đa ${MAX_SHUTTLES} chuyến xe` })
+  @ValidateNested({ each: true })
+  @Type(() => ShuttleDTO)
+  shuttles?: ShuttleDTO[];
 
   /** New guests to invite (emails are sent like on creation). */
   @IsOptional()
