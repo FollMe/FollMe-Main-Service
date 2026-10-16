@@ -151,6 +151,33 @@ export class invitationsController {
     return await this.invitationsService.removeExpense(id, expenseId, req.user._id);
   }
 
+  /** The host's link for someone to manage the event with them; `rotate` replaces it. */
+  @Post('events/:id/cohost-key')
+  @UseGuards(AuthGuard("jwt"))
+  async cohostKey(@Request() req, @Param('id') id: string, @Body('rotate') rotate?: boolean) {
+    return await this.invitationsService.cohostKey(id, req.user._id, rotate === true);
+  }
+
+  /** What the host's link is for, shown before signing in and accepting. */
+  @Get('events/:id/cohost-invite/:key')
+  async cohostInvite(@Param('id') id: string, @Param('key') key: string) {
+    return await this.invitationsService.cohostInvite(id, key);
+  }
+
+  /** Opening the host's link, signed in: manage the event with them. */
+  @Post('events/:id/cohosts')
+  @UseGuards(AuthGuard("jwt"))
+  async joinAsCohost(@Request() req, @Param('id') id: string, @Body('key') key: string) {
+    return await this.invitationsService.joinAsCohost(id, key, req.user._id);
+  }
+
+  /** The host takes someone off, or a co-host leaves. */
+  @Delete('events/:id/cohosts/:userId')
+  @UseGuards(AuthGuard("jwt"))
+  async removeCohost(@Request() req, @Param('id') id: string, @Param('userId') userId: string) {
+    return await this.invitationsService.removeCohost(id, userId, req.user._id);
+  }
+
   /** A copy of the event for another ceremony (lễ vu quy, tiệc báo hỷ). */
   @Post('events/:id/duplicate')
   @UseGuards(AuthGuard("jwt"))

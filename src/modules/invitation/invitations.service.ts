@@ -24,7 +24,7 @@ import { WishDTO } from './dtos/wish.dto';
 import { ArrivalDTO, WalkInDTO } from './dtos/desk.dto';
 import { GiftGiverDTO, ReceivedGiftDTO } from './dtos/receivedGift.dto';
 import { SeatDTO } from './dtos/seating.dto';
-import { MAX_EXPENSES, MAX_PHOTOS, MAX_TASKS, MAX_WISHES_SHOWN } from './invitation.constants';
+import { MAX_COHOSTS, MAX_EXPENSES, MAX_PHOTOS, MAX_TASKS, MAX_WISHES_SHOWN } from './invitation.constants';
 
 const templateStr = fs.readFileSync(path.resolve(process.cwd(), 'src/templates/sendInvitation.template.hbs')).toString('utf8')
 const template = Handlebars.compile(templateStr);
@@ -149,8 +149,8 @@ export class InvitationsService {
   async getList(userId: string, page: number = 1) {
     const offset = page > 1 ? (page - 1) * this.limit : 0;
 
-    return await this.eventModel.find({ isDeleted: { $ne: true }, host: userId })
-      .select('-isDeleted -host')
+    return await this.eventModel.find({ isDeleted: { $ne: true }, ...owned(userId) })
+      .select('-isDeleted -cohosts')
       .sort({ startAt: -1, _id: 1 })
       .populate('numGuests')
       .limit(this.limit)
@@ -161,9 +161,11 @@ export class InvitationsService {
   async findOne(eventId: string, userId: string) {
     assertObjectId(eventId);
 
-    const invitation = await this.eventModel.findOne({ isDeleted: { $ne: true }, host: userId, _id: eventId })
-      .select('-isDeleted -host +expenses +checklist')
-      .populate('guests', HOST_GUEST_FIELDS);
+    const invitation = await this.eventModel.findOne({ isDeleted: { $ne: true }, ...owned(userId), _id: eventId })
+      .select('-isDeleted +expenses +checklist')
+      .populate('guests', HOST_GUEST_FIELDS)
+      .populate('host', '_id name avatar')
+      .populate('cohosts', '_id name avatar');
 
     if (!invitation) {
       throw new NotFoundException();
@@ -174,10 +176,13 @@ export class InvitationsService {
       .select('_id name message isHidden createdAt');
 
     const guests = ((invitation as any).guests ?? []) as Guest[];
+    const json = (invitation as any).toJSON();
     return {
-      ...(invitation as any).toJSON(),
+      ...json,
       wishes,
       summary: summarize(guests),
+      // The host may delete it and choose who manages it with them
+      isHost: String(json.host?._id ?? json.host) === String(userId),
     };
   }
 
@@ -191,18 +196,18 @@ export class InvitationsService {
     // Their table too: the card shows it on the day
     const guest: any = await this.guestModel.findOne({ isDeleted: { $ne: true }, _id: guestId })
       .select('_id name event rsvp table')
-      .populate('event', `${PUBLIC_EVENT_FIELDS} host isDeleted`);
+      .populate('event', `${PUBLIC_EVENT_FIELDS} host cohosts isDeleted`);
     const event = guest?.event;
     if (!guest || !event || event.isDeleted) {
       throw new NotFoundException();
     }
 
-    if (!viewerId || String(event.host) !== String(viewerId)) {
+    if (!managedBy(event, viewerId)) {
       await this.guestModel.updateOne({ _id: guest._id }, { $inc: { viewed: 1 } });
     }
 
     // Guests never see who the host is
-    const { host, isDeleted, ...publicEvent } = event.toJSON();
+    const { host, cohosts, isDeleted, ...publicEvent } = event.toJSON();
     return {
       ...guest.toJSON(),
       event: publicEvent,
@@ -217,14 +222,14 @@ export class InvitationsService {
   async findPublic(eventId: string, viewerId?: string) {
     assertObjectId(eventId);
     const event: any = await this.eventModel.findOne({ _id: eventId, isDeleted: { $ne: true }, allowPublicLink: true })
-      .select(`${PUBLIC_EVENT_FIELDS} host`);
+      .select(`${PUBLIC_EVENT_FIELDS} host cohosts`);
     if (!event) {
       throw new NotFoundException();
     }
-    if (!viewerId || String(event.host) !== String(viewerId)) {
+    if (!managedBy(event, viewerId)) {
       await this.eventModel.updateOne({ _id: eventId }, { $inc: { publicViews: 1 } }, { timestamps: false });
     }
-    const { host, ...publicEvent } = event.toJSON();
+    const { host, cohosts, ...publicEvent } = event.toJSON();
     return { event: publicEvent, wishes: await this.visibleWishes(eventId) };
   }
 
@@ -303,7 +308,7 @@ export class InvitationsService {
     // The event as it was, to find its photos
     const event: any = await this.eventModel.findOneAndUpdate(
       { _id: eventId, host: userId, isDeleted: { $ne: true } },
-      { $set: { isDeleted: true, deletedAt }, $unset: { photos: 1, screenKey: 1, deskKey: 1 } },
+      { $set: { isDeleted: true, deletedAt }, $unset: { photos: 1, screenKey: 1, deskKey: 1, cohostKey: 1 } },
     ).select('_id photos');
     if (!event) {
       throw new NotFoundException();
@@ -321,7 +326,7 @@ export class InvitationsService {
   async update(eventId: string, userId: string, body: UpdateInvitationDTO, slEmail: string) {
     assertObjectId(eventId);
     const event = await this.eventModel.findOneAndUpdate(
-      { _id: eventId, host: userId, isDeleted: { $ne: true } },
+      { _id: eventId, ...owned(userId), isDeleted: { $ne: true } },
       { $set: pickEditable(body) },
       { new: true },
     );
@@ -576,7 +581,7 @@ export class InvitationsService {
 
   private async hostEvent(eventId: string, userId: string, fields: string) {
     assertObjectId(eventId);
-    const event = await this.eventModel.findOne({ _id: eventId, host: userId, isDeleted: { $ne: true } }).select(fields);
+    const event = await this.eventModel.findOne({ _id: eventId, ...owned(userId), isDeleted: { $ne: true } }).select(fields);
     if (!event) {
       throw new NotFoundException();
     }
@@ -599,7 +604,7 @@ export class InvitationsService {
     };
     // Re-checks the limit: another upload may have finished meanwhile.
     const res = await this.eventModel.updateOne(
-      { _id: eventId, host: userId, isDeleted: { $ne: true }, [`photos.${MAX_PHOTOS - 1}`]: { $exists: false } },
+      { _id: eventId, ...owned(userId), isDeleted: { $ne: true }, [`photos.${MAX_PHOTOS - 1}`]: { $exists: false } },
       { $push: { photos: photo } },
     );
     if (!res.modifiedCount) {
@@ -614,7 +619,7 @@ export class InvitationsService {
     assertObjectId(photoId);
     // Returns the event as it was, so the removed photo can be found.
     const event: any = await this.eventModel.findOneAndUpdate(
-      { _id: eventId, host: userId, isDeleted: { $ne: true }, 'photos._id': photoId },
+      { _id: eventId, ...owned(userId), isDeleted: { $ne: true }, 'photos._id': photoId },
       { $pull: { photos: { _id: photoId } } },
     ).select('photos');
     const photo = event?.photos?.find(p => String(p._id) === photoId);
@@ -638,7 +643,7 @@ export class InvitationsService {
     }
     // Only if no photo was added or removed since it was read.
     const res = await this.eventModel.updateOne(
-      { _id: eventId, host: userId, isDeleted: { $ne: true }, photos: { $size: photos.length } },
+      { _id: eventId, ...owned(userId), isDeleted: { $ne: true }, photos: { $size: photos.length } },
       { $set: { photos: order.map(id => byId.get(id)) } },
     );
     if (!res.matchedCount) {
@@ -657,6 +662,79 @@ export class InvitationsService {
       .catch(err => {
         console.error(`Could not delete photo ${publicId} from Cloudinary`, err);
       });
+  }
+
+  // ---------- Managing an event together ----------
+
+  /** The host's link for someone to manage the event with them; `rotate` replaces it. */
+  cohostKey(eventId: string, userId: string, rotate = false) {
+    return this.secretKey('cohostKey', eventId, userId, rotate);
+  }
+
+  /**
+   * What the host's link is for, before the person opening it signs in and
+   * accepts: the event and who invites them. No guest data.
+   */
+  async cohostInvite(eventId: string, key: string) {
+    assertObjectId(eventId);
+    assertKey(key);
+    const event: any = await this.eventModel.findOne({ _id: eventId, isDeleted: { $ne: true }, cohostKey: key })
+      .select('title startAt type groomName brideName host cohosts')
+      .populate('host', 'name');
+    if (!event) {
+      throw new NotFoundException();
+    }
+    const cohosts = (event.cohosts ?? []).map(String);
+    return {
+      _id: event._id,
+      title: event.title,
+      startAt: event.startAt,
+      type: event.type,
+      groomName: event.groomName,
+      brideName: event.brideName,
+      hostName: event.host?.name ?? '',
+      hostId: String(event.host?._id ?? event.host),
+      cohosts,
+      full: cohosts.length >= MAX_COHOSTS,
+    };
+  }
+
+  /** Someone signed in opens the host's link: they manage the event from now on. */
+  async joinAsCohost(eventId: string, key: string, userId: string) {
+    assertObjectId(eventId);
+    assertKey(key);
+    const event: any = await this.eventModel.findOne({ _id: eventId, isDeleted: { $ne: true }, cohostKey: key })
+      .select('_id title host cohosts');
+    if (!event) {
+      throw new NotFoundException();
+    }
+    if (managedBy(event, userId)) {
+      return { _id: event._id, title: event.title };
+    }
+    // Room is checked again on write: two people may open the link at once
+    const res = await this.eventModel.updateOne(
+      { _id: eventId, cohostKey: key, [`cohosts.${MAX_COHOSTS - 1}`]: { $exists: false } },
+      { $addToSet: { cohosts: userId } },
+    );
+    if (!res.modifiedCount) {
+      throw new BadRequestException(`Thiệp đã có đủ ${MAX_COHOSTS} người cùng quản lý`);
+    }
+    return { _id: event._id, title: event.title };
+  }
+
+  /** The host takes a co-host off the event, or a co-host leaves it. */
+  async removeCohost(eventId: string, cohostId: string, userId: string) {
+    assertObjectId(eventId);
+    assertObjectId(cohostId);
+    const who = String(cohostId) === String(userId) ? owned(userId) : { host: userId };
+    const res = await this.eventModel.updateOne(
+      { _id: eventId, isDeleted: { $ne: true }, ...who, cohosts: cohostId },
+      { $pull: { cohosts: cohostId } },
+    );
+    if (!res.modifiedCount) {
+      throw new NotFoundException();
+    }
+    return { _id: cohostId };
   }
 
   // ---------- Copies of an event ----------
@@ -719,7 +797,7 @@ export class InvitationsService {
       throw new BadRequestException('Vui lòng nhập khoản chi');
     }
     const res = await this.eventModel.updateOne(
-      { _id: eventId, host: userId, isDeleted: { $ne: true }, [`expenses.${MAX_EXPENSES - 1}`]: { $exists: false } },
+      { _id: eventId, ...owned(userId), isDeleted: { $ne: true }, [`expenses.${MAX_EXPENSES - 1}`]: { $exists: false } },
       { $push: { expenses: { ...expense, createdAt: new Date(), updatedAt: new Date() } } },
     );
     if (!res.modifiedCount) {
@@ -756,7 +834,7 @@ export class InvitationsService {
     }
     $set['expenses.$.updatedAt'] = new Date();
     const event: any = await this.eventModel.findOneAndUpdate(
-      { _id: eventId, host: userId, isDeleted: { $ne: true }, 'expenses._id': expenseId },
+      { _id: eventId, ...owned(userId), isDeleted: { $ne: true }, 'expenses._id': expenseId },
       { $set, ...(Object.keys($unset).length ? { $unset } : {}) },
       { new: true },
     ).select({ expenses: { $elemMatch: { _id: expenseId } } });
@@ -771,7 +849,7 @@ export class InvitationsService {
     assertObjectId(eventId);
     assertObjectId(expenseId);
     const res = await this.eventModel.updateOne(
-      { _id: eventId, host: userId, isDeleted: { $ne: true }, 'expenses._id': expenseId },
+      { _id: eventId, ...owned(userId), isDeleted: { $ne: true }, 'expenses._id': expenseId },
       { $pull: { expenses: { _id: expenseId } } },
     );
     if (!res.modifiedCount) {
@@ -793,7 +871,7 @@ export class InvitationsService {
     }
     const res = await this.eventModel.updateOne(
       {
-        _id: eventId, host: userId, isDeleted: { $ne: true },
+        _id: eventId, ...owned(userId), isDeleted: { $ne: true },
         $expr: { $lte: [{ $add: [{ $size: { $ifNull: ['$checklist', []] } }, tasks.length] }, MAX_TASKS] },
       },
       { $push: { checklist: { $each: tasks } } },
@@ -835,7 +913,7 @@ export class InvitationsService {
       throw new BadRequestException('Không có gì để cập nhật');
     }
     const event: any = await this.eventModel.findOneAndUpdate(
-      { _id: eventId, host: userId, isDeleted: { $ne: true }, 'checklist._id': taskId },
+      { _id: eventId, ...owned(userId), isDeleted: { $ne: true }, 'checklist._id': taskId },
       { ...(Object.keys($set).length ? { $set } : {}), ...(Object.keys($unset).length ? { $unset } : {}) },
       { new: true },
     ).select({ checklist: { $elemMatch: { _id: taskId } } });
@@ -850,7 +928,7 @@ export class InvitationsService {
     assertObjectId(eventId);
     assertObjectId(taskId);
     const res = await this.eventModel.updateOne(
-      { _id: eventId, host: userId, isDeleted: { $ne: true }, 'checklist._id': taskId },
+      { _id: eventId, ...owned(userId), isDeleted: { $ne: true }, 'checklist._id': taskId },
       { $pull: { checklist: { _id: taskId } } },
     );
     if (!res.modifiedCount) {
@@ -866,9 +944,15 @@ export class InvitationsService {
    * reception desk), made on first use. `rotate` makes a new one, so the
    * old link stops working.
    */
-  private async secretKey(field: 'screenKey' | 'deskKey', eventId: string, userId: string, rotate: boolean) {
-    const event = await this.hostEvent(eventId, userId, `_id +${field}`);
-    const filter = { _id: eventId, host: userId, isDeleted: { $ne: true } };
+  private async secretKey(field: 'screenKey' | 'deskKey' | 'cohostKey', eventId: string, userId: string, rotate: boolean) {
+    // Only the host hands out the link to manage the event with them
+    const who = field === 'cohostKey' ? { host: userId } : owned(userId);
+    assertObjectId(eventId);
+    const filter = { _id: eventId, ...who, isDeleted: { $ne: true } };
+    const event: any = await this.eventModel.findOne(filter).select(`_id +${field}`);
+    if (!event) {
+      throw new NotFoundException();
+    }
     if (event[field] && !rotate) {
       return { key: event[field] as string };
     }
@@ -1016,7 +1100,7 @@ export class InvitationsService {
   async setWishHidden(eventId: string, wishId: string, userId: string, isHidden: boolean) {
     assertObjectId(eventId);
     assertObjectId(wishId);
-    const event = await this.eventModel.findOne({ _id: eventId, host: userId, isDeleted: { $ne: true } }).select('_id');
+    const event = await this.eventModel.findOne({ _id: eventId, ...owned(userId), isDeleted: { $ne: true } }).select('_id');
     if (!event) {
       throw new NotFoundException();
     }
@@ -1031,6 +1115,17 @@ export class InvitationsService {
 const SCREEN_POLL_OVERLAP_MS = 5000;
 
 /** Keys of helper links are 32 hex characters; anything else is unknown. */
+/** The events a user manages: theirs, or ones they were asked to manage with the host. */
+export function owned(userId: string) {
+  return { $or: [{ host: userId }, { cohosts: userId }] };
+}
+
+/** True when `userId` manages the event (its host or a co-host). */
+function managedBy(event: { host?: unknown; cohosts?: unknown[] }, userId?: string) {
+  return Boolean(userId) && (String(event.host) === String(userId)
+    || (event.cohosts ?? []).some(id => String(id) === String(userId)));
+}
+
 function assertKey(key?: string) {
   if (!/^[a-f0-9]{32}$/.test(key ?? '')) {
     throw new NotFoundException();

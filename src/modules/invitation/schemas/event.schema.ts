@@ -7,6 +7,8 @@ export class Event {
   mapLocation: string;
   startAt: Date;
   host: string;
+  cohosts?: string[];
+  cohostKey?: string;
   isDeleted: boolean;
   deletedAt?: Date;
   type: string;
@@ -116,6 +118,11 @@ export const EventSchema = new Schema({
   mapLocation: { type: String },
   startAt: { type: Date },
   host: { type: Schema.Types.ObjectId, ref: 'User' },
+  // Users who manage it with the host (everything but deleting it and
+  // choosing who else manages it); they join through a link from the host
+  cohosts: { type: [{ type: Schema.Types.ObjectId, ref: 'User' }], default: undefined },
+  // Secret part of that link. Never sent to guests or co-hosts.
+  cohostKey: { type: String, select: false },
   isDeleted: { type: Boolean, default: false },
   // Set when the host deletes it: removed for good PURGE_AFTER_SECONDS later
   deletedAt: { type: Date },
@@ -160,6 +167,7 @@ export const EventSchema = new Schema({
 
 // "Thiệp của tôi": the host's events, latest first
 EventSchema.index({ host: 1, startAt: -1 });
+EventSchema.index({ cohosts: 1 });
 EventSchema.index({ deletedAt: 1 }, { expireAfterSeconds: PURGE_AFTER_SECONDS });
 
 EventSchema.virtual('guests', {

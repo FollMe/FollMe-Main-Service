@@ -1,7 +1,7 @@
 import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { plainToInstance } from 'class-transformer';
 import { validate } from 'class-validator';
-import { InvitationsService, ogImage, summarize, tidyExpense, tidyProgram, tidyTask } from './invitations.service';
+import { InvitationsService, ogImage, owned, summarize, tidyExpense, tidyProgram, tidyTask } from './invitations.service';
 import { PublicRsvpDTO } from './dtos/rsvp.dto';
 import { CreateInvitationDTO } from './dtos/createInvitation.dto';
 import { UpdateInvitationDTO } from './dtos/updateInvitation.dto';
@@ -17,6 +17,7 @@ import { DuplicateEventDTO } from './dtos/duplicate.dto';
 jest.mock('src/sharedServices/mailer.service', () => ({ MailerService: class {} }));
 
 const HOST = '64b000000000000000000001';
+const OTHER = '64b000000000000000000002';
 const EVENT = '64b0000000000000000000e1';
 const GUEST = '64b0000000000000000000a1';
 
@@ -307,7 +308,7 @@ describe('photos', () => {
     expect(cloudinary.uploadImage).toHaveBeenCalledWith(file, `FollMe/events/${EVENT}`);
     expect(photo).toMatchObject({ publicId: 'FollMe/events/e1/a', width: 1600, height: 1067 });
     const [filter, update] = eventModel.updateOne.mock.calls[0];
-    expect(filter).toMatchObject({ _id: EVENT, host: HOST, 'photos.11': { $exists: false } });
+    expect(filter).toMatchObject({ _id: EVENT, $or: [{ host: HOST }, { cohosts: HOST }], 'photos.11': { $exists: false } });
     expect(update).toEqual({ $push: { photos: photo } });
   });
 
@@ -337,7 +338,7 @@ describe('photos', () => {
     const { service, eventModel, cloudinary } = setup({ event });
     await service.removePhoto(EVENT, PHOTO_A, HOST);
     expect(eventModel.findOneAndUpdate).toHaveBeenCalledWith(
-      expect.objectContaining({ host: HOST, 'photos._id': PHOTO_A }),
+      expect.objectContaining({ $or: [{ host: HOST }, { cohosts: HOST }], 'photos._id': PHOTO_A }),
       { $pull: { photos: { _id: PHOTO_A } } },
     );
     await flush();
@@ -401,7 +402,7 @@ describe('venue screen', () => {
     const { key } = await service.screenKey(EVENT, HOST, true);
     expect(key).toMatch(/^[a-f0-9]{32}$/);
     expect(key).not.toBe(KEY);
-    expect(eventModel.updateOne).toHaveBeenCalledWith(expect.objectContaining({ host: HOST }), { $set: { screenKey: key } });
+    expect(eventModel.updateOne).toHaveBeenCalledWith(expect.objectContaining({ $or: [{ host: HOST }, { cohosts: HOST }] }), { $set: { screenKey: key } });
   });
 
   it('needs the right key', async () => {
@@ -441,12 +442,12 @@ describe('reception desk', () => {
       .mockReturnValueOnce(query({ _id: EVENT, deskKey: KEY }));
     expect(await service.deskKey(EVENT, HOST)).toEqual({ key: KEY });
     expect(eventModel.findOne.mock.results[0].value.select).toHaveBeenCalledWith('_id +deskKey');
-    expect(eventModel.updateOne.mock.calls[0][0]).toMatchObject({ host: HOST, deskKey: { $exists: false } });
+    expect(eventModel.updateOne.mock.calls[0][0]).toMatchObject({ $or: [{ host: HOST }, { cohosts: HOST }], deskKey: { $exists: false } });
 
     const rotated = setup({ event: { _id: EVENT, deskKey: KEY } as any });
     const { key } = await rotated.service.deskKey(EVENT, HOST, true);
     expect(key).not.toBe(KEY);
-    expect(rotated.eventModel.updateOne).toHaveBeenCalledWith(expect.objectContaining({ host: HOST }), { $set: { deskKey: key } });
+    expect(rotated.eventModel.updateOne).toHaveBeenCalledWith(expect.objectContaining({ $or: [{ host: HOST }, { cohosts: HOST }] }), { $set: { deskKey: key } });
   });
 
   it('lists the guests by the desk key, without emails or notes', async () => {
@@ -661,7 +662,7 @@ describe('budget', () => {
     expect(added.note).toBeUndefined();
     expect(added.extra).toBeUndefined();
     const [filter, update] = eventModel.updateOne.mock.calls[0];
-    expect(filter).toMatchObject({ _id: EVENT, host: HOST, 'expenses.99': { $exists: false } });
+    expect(filter).toMatchObject({ _id: EVENT, $or: [{ host: HOST }, { cohosts: HOST }], 'expenses.99': { $exists: false } });
     expect(update.$push.expenses).toMatchObject({ label: 'Tiệc cưới', category: 'venue' });
 
     eventModel.updateOne = jest.fn(async () => ({ matchedCount: 0, modifiedCount: 0 }));
@@ -677,7 +678,7 @@ describe('budget', () => {
     const saved = await service.updateExpense(EVENT, EXPENSE, HOST, { paid: 5000000, amount: null, note: '' });
     expect(saved).toMatchObject({ _id: EXPENSE, paid: 5000000 });
     const [filter, update] = eventModel.findOneAndUpdate.mock.calls[0];
-    expect(filter).toMatchObject({ _id: EVENT, host: HOST, 'expenses._id': EXPENSE });
+    expect(filter).toMatchObject({ _id: EVENT, $or: [{ host: HOST }, { cohosts: HOST }], 'expenses._id': EXPENSE });
     expect(update.$set).toMatchObject({ 'expenses.$.paid': 5000000 });
     expect(update.$unset).toEqual({ 'expenses.$.amount': '', 'expenses.$.note': '' });
     expect(update.$set['expenses.$.label']).toBeUndefined();
@@ -733,6 +734,84 @@ describe('budget', () => {
   });
 });
 
+describe('managing an event together', () => {
+  const KEY = 'ab'.repeat(16);
+
+  it('lets the host and co-hosts manage, never anyone else', async () => {
+    expect(owned(HOST)).toEqual({ $or: [{ host: HOST }, { cohosts: HOST }] });
+    const { service, eventModel } = setup();
+    await service.update(EVENT, OTHER, { title: 'Mới' } as any, 'x@y');
+    expect(eventModel.findOneAndUpdate.mock.calls[0][0]).toMatchObject({ _id: EVENT, $or: [{ host: OTHER }, { cohosts: OTHER }] });
+    eventModel.find = jest.fn(() => query([]));
+    await service.getList(OTHER);
+    expect(eventModel.find.mock.calls[0][0]).toMatchObject({ $or: [{ host: OTHER }, { cohosts: OTHER }] });
+  });
+
+  it('only the host deletes the event or hands out the link', async () => {
+    const { service, eventModel } = setup();
+    eventModel.findOneAndUpdate = jest.fn(() => query(null));
+    await expect(service.remove(EVENT, OTHER)).rejects.toBeInstanceOf(NotFoundException);
+    expect(eventModel.findOneAndUpdate.mock.calls[0][0]).toMatchObject({ host: OTHER });
+    expect(eventModel.findOneAndUpdate.mock.calls[0][0].$or).toBeUndefined();
+    eventModel.findOne = jest.fn(() => query(null));
+    await expect(service.cohostKey(EVENT, OTHER)).rejects.toBeInstanceOf(NotFoundException);
+    expect(eventModel.findOne.mock.calls[0][0]).toMatchObject({ host: OTHER });
+  });
+
+  it('adds whoever opens the link, within the limit', async () => {
+    const { service, eventModel } = setup({ event: { _id: EVENT, title: 'Cưới', host: HOST, cohosts: [] } as any });
+    expect(await service.joinAsCohost(EVENT, KEY, OTHER)).toEqual({ _id: EVENT, title: 'Cưới' });
+    expect(eventModel.findOne.mock.calls[0][0]).toMatchObject({ _id: EVENT, cohostKey: KEY });
+    const [filter, update] = eventModel.updateOne.mock.calls[0];
+    expect(filter).toMatchObject({ cohostKey: KEY, 'cohosts.2': { $exists: false } });
+    expect(update).toEqual({ $addToSet: { cohosts: OTHER } });
+    eventModel.updateOne = jest.fn(async () => ({ matchedCount: 0, modifiedCount: 0 }));
+    await expect(service.joinAsCohost(EVENT, KEY, OTHER)).rejects.toBeInstanceOf(BadRequestException);
+  });
+
+  it('says what the link is for, without guest data', async () => {
+    const { service, eventModel } = setup({ event: { _id: EVENT, title: 'Cưới', host: { _id: HOST, name: 'Lan' }, cohosts: [OTHER] } as any });
+    expect(await service.cohostInvite(EVENT, KEY)).toMatchObject({ title: 'Cưới', hostName: 'Lan', hostId: HOST, cohosts: [OTHER], full: false });
+    expect(eventModel.findOne.mock.calls[0][0]).toMatchObject({ _id: EVENT, cohostKey: KEY });
+    expect(eventModel.findOne.mock.results[0].value.select.mock.calls[0][0]).not.toMatch(/guests|gifts|expenses/);
+    await expect(service.cohostInvite(EVENT, 'nope')).rejects.toBeInstanceOf(NotFoundException);
+  });
+
+  it('does nothing for the host or a co-host, refuses a wrong key', async () => {
+    const { service, eventModel } = setup({ event: { _id: EVENT, title: 'Cưới', host: HOST, cohosts: [OTHER] } as any });
+    await service.joinAsCohost(EVENT, KEY, HOST);
+    await service.joinAsCohost(EVENT, KEY, OTHER);
+    expect(eventModel.updateOne).not.toHaveBeenCalled();
+    await expect(service.joinAsCohost(EVENT, 'nope', OTHER)).rejects.toBeInstanceOf(NotFoundException);
+    eventModel.findOne = jest.fn(() => query(null));
+    await expect(service.joinAsCohost(EVENT, KEY, OTHER)).rejects.toBeInstanceOf(NotFoundException);
+  });
+
+  it('the host takes a co-host off; a co-host can only leave', async () => {
+    const { service, eventModel } = setup();
+    await service.removeCohost(EVENT, OTHER, HOST);
+    expect(eventModel.updateOne.mock.calls[0]).toEqual([
+      { _id: EVENT, isDeleted: { $ne: true }, host: HOST, cohosts: OTHER }, { $pull: { cohosts: OTHER } },
+    ]);
+    await service.removeCohost(EVENT, OTHER, OTHER);
+    expect(eventModel.updateOne.mock.calls[1][0]).toMatchObject({ $or: [{ host: OTHER }, { cohosts: OTHER }], cohosts: OTHER });
+    eventModel.updateOne = jest.fn(async () => ({ matchedCount: 0, modifiedCount: 0 }));
+    await expect(service.removeCohost(EVENT, HOST, OTHER)).rejects.toBeInstanceOf(NotFoundException);
+  });
+
+  it('a co-host opening a guest card is not a guest view', async () => {
+    const asDoc = (fields: any) => ({ ...fields, toJSON: () => ({ ...fields }) });
+    const event = asDoc({ _id: EVENT, host: HOST, cohosts: [OTHER], isDeleted: false, title: 'Cưới' });
+    const { service, guestModel, wishModel } = setup();
+    guestModel.findOne = jest.fn(() => query(asDoc({ _id: GUEST, name: 'Minh', event })));
+    wishModel.find = jest.fn(() => query([]));
+    const card: any = await service.findGuest(GUEST, OTHER);
+    expect(guestModel.updateOne).not.toHaveBeenCalled();
+    expect(card.event.cohosts).toBeUndefined();
+    expect(card.event.host).toBeUndefined();
+  });
+});
+
 describe('copies of an event', () => {
   const source = {
     _id: EVENT, title: 'Lễ thành hôn', location: 'Nhà trai, Huế', mapLocation: 'https://maps.app/x', startAt: new Date('2027-01-16T04:00:00Z'),
@@ -749,7 +828,7 @@ describe('copies of an event', () => {
       title: ' Lễ vu quy ', startAt: '2027-01-15T02:00:00.000Z', location: 'Nhà gái, Huế',
     });
     expect(res).toEqual({ _id: EVENT, guests: 0 });
-    expect(eventModel.findOne.mock.calls[0][0]).toMatchObject({ _id: EVENT, host: HOST });
+    expect(eventModel.findOne.mock.calls[0][0]).toMatchObject({ _id: EVENT, $or: [{ host: HOST }, { cohosts: HOST }] });
     const copy = saved[0];
     expect(copy).toMatchObject({
       host: HOST, title: 'Lễ vu quy', startAt: '2027-01-15T02:00:00.000Z', location: 'Nhà gái, Huế', mapLocation: '',
@@ -813,7 +892,7 @@ describe('checklist', () => {
     expect(added[0].due).toEqual(new Date('2026-07-16T05:00:00.000Z'));
     expect(added[1].extra).toBeUndefined();
     const [filter, update] = eventModel.updateOne.mock.calls[0];
-    expect(filter).toMatchObject({ _id: EVENT, host: HOST });
+    expect(filter).toMatchObject({ _id: EVENT, $or: [{ host: HOST }, { cohosts: HOST }] });
     expect(JSON.stringify(filter.$expr)).toContain('60');
     expect(update.$push.checklist.$each).toHaveLength(2);
   });
@@ -838,7 +917,7 @@ describe('checklist', () => {
     update = eventModel.findOneAndUpdate.mock.calls[1][1];
     expect(update.$set).toEqual({ 'checklist.$.done': false, 'checklist.$.label': 'Xếp bàn' });
     expect(update.$unset).toEqual({ 'checklist.$.doneAt': '', 'checklist.$.due': '' });
-    expect(eventModel.findOneAndUpdate.mock.calls[1][0]).toMatchObject({ host: HOST, 'checklist._id': TASK });
+    expect(eventModel.findOneAndUpdate.mock.calls[1][0]).toMatchObject({ $or: [{ host: HOST }, { cohosts: HOST }], 'checklist._id': TASK });
   });
 
   it('refuses empty changes and blank labels; 404s elsewhere', async () => {
@@ -1025,7 +1104,7 @@ describe('remove', () => {
     expect(await service.remove(EVENT, HOST)).toEqual({ _id: EVENT });
     const [filter, update] = eventModel.findOneAndUpdate.mock.calls[0];
     expect(filter).toEqual({ _id: EVENT, host: HOST, isDeleted: { $ne: true } });
-    expect(update.$unset).toEqual({ photos: 1, screenKey: 1, deskKey: 1 });
+    expect(update.$unset).toEqual({ photos: 1, screenKey: 1, deskKey: 1, cohostKey: 1 });
     const { deletedAt } = update.$set;
     expect(update.$set).toEqual({ isDeleted: true, deletedAt: expect.any(Date) });
     // Guests and wishes are purged with it
