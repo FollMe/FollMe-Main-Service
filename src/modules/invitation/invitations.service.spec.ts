@@ -693,6 +693,18 @@ describe('budget', () => {
     expect(update.$set['expenses.$.label']).toBeUndefined();
   });
 
+  it('says who pays a line, and clears it', async () => {
+    const { service, eventModel } = setup();
+    eventModel.findOneAndUpdate = jest.fn(() => query({ expenses: [{ _id: EXPENSE, label: 'Ảnh cưới', payer: 'bride' }] }));
+    await service.updateExpense(EVENT, EXPENSE, HOST, { payer: 'bride' });
+    expect(eventModel.findOneAndUpdate.mock.calls[0][1].$set).toMatchObject({ 'expenses.$.payer': 'bride' });
+    await service.updateExpense(EVENT, EXPENSE, HOST, { payer: null });
+    expect(eventModel.findOneAndUpdate.mock.calls[1][1].$unset).toEqual({ 'expenses.$.payer': '' });
+    const props = async body => (await validate(plainToInstance(UpdateExpenseDTO, body))).map(e => e.property);
+    expect(await props({ payer: 'shared' })).toEqual([]);
+    expect(await props({ payer: 'aunt' })).toEqual(['payer']);
+  });
+
   it('never clears what a line is for, and 404s for another event', async () => {
     const { service, eventModel } = setup();
     await expect(service.updateExpense(EVENT, EXPENSE, HOST, { label: ' ' })).rejects.toBeInstanceOf(BadRequestException);

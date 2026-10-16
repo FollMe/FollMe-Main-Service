@@ -87,6 +87,7 @@ export function tidyExpense(body: Partial<ExpenseDTO> | UpdateExpenseDTO) {
     amount: body.amount ?? undefined,
     paid: body.paid ?? undefined,
     note: text(body.note),
+    payer: body.payer ?? undefined,
   };
 }
 
@@ -888,14 +889,14 @@ export class InvitationsService {
     return expense;
   }
 
-  /** Changes the given fields of a line; null clears the cost, the paid amount or the note. */
+  /** Changes the given fields of a line; null clears the cost, the paid amount, the note or who pays. */
   async updateExpense(eventId: string, expenseId: string, userId: string, body: UpdateExpenseDTO) {
     assertObjectId(eventId);
     assertObjectId(expenseId);
     const $set: Record<string, unknown> = {};
     const $unset: Record<string, ''> = {};
     const tidy = tidyExpense(body);
-    for (const key of ['label', 'category', 'amount', 'paid', 'note'] as const) {
+    for (const key of ['label', 'category', 'amount', 'paid', 'note', 'payer'] as const) {
       if (body[key] === undefined) {
         continue;
       }

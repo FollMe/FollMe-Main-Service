@@ -1,5 +1,7 @@
 import { Schema } from 'mongoose';
-import { EVENT_MUSIC, EVENT_THEMES, EVENT_TYPES, EXPENSE_CATEGORIES, GIFT_SIDES, PURGE_AFTER_SECONDS, TASK_LINKS } from '../invitation.constants';
+import {
+  EVENT_MUSIC, EVENT_THEMES, EVENT_TYPES, EXPENSE_CATEGORIES, EXPENSE_PAYERS, GIFT_SIDES, PURGE_AFTER_SECONDS, TASK_LINKS,
+} from '../invitation.constants';
 
 export class Event {
   title: string;
@@ -56,6 +58,7 @@ export class Expense {
   amount?: number;
   paid?: number;
   note?: string;
+  payer?: string;
 }
 
 /** A thing to do for the event, from the host's checklist. */
@@ -94,6 +97,8 @@ const ExpenseSchema = new Schema({
   amount: { type: Number },
   paid: { type: Number },
   note: { type: String },
+  // 'groom', 'bride' or 'shared' (half each); unset when the couple pays
+  payer: { type: String, enum: EXPENSE_PAYERS },
 }, { timestamps: true });
 
 const TaskSchema = new Schema({
