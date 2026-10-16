@@ -12,7 +12,7 @@ import { PublicRsvpDTO, RsvpDTO } from './dtos/rsvp.dto';
 import { WishDTO } from './dtos/wish.dto';
 import { PhotoOrderDTO } from './dtos/photo.dto';
 import { UpdateGuestDTO } from './dtos/updateGuest.dto';
-import { ArrivalDTO, WalkInDTO } from './dtos/desk.dto';
+import { ArrivalDTO, SelfArrivalDTO, WalkInDTO } from './dtos/desk.dto';
 import { GiftClaimDTO, GiftGiverDTO } from './dtos/receivedGift.dto';
 import { SeatingDTO } from './dtos/seating.dto';
 import { ExpenseDTO, UpdateExpenseDTO } from './dtos/expense.dto';
@@ -302,6 +302,12 @@ export class invitationsController {
   @Put('invitations/:id/rsvp')
   async rsvp(@Param('id') id: string, @Body() body: RsvpDTO) {
     return await this.invitationsService.rsvpGuest(id, body);
+  }
+
+  /** "Mình đã đến": the guest checks themselves in at the door, on the day. */
+  @Put('invitations/:id/arrive')
+  async arriveSelf(@Param('id') id: string, @Body() body: SelfArrivalDTO) {
+    return await this.invitationsService.arriveSelf(id, body);
   }
 
   /** A photo the guest took at the party, from their card (multipart "photo"). */
