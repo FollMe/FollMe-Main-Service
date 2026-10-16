@@ -769,6 +769,14 @@ describe('managing an event together', () => {
     await expect(service.joinAsCohost(EVENT, KEY, OTHER)).rejects.toBeInstanceOf(BadRequestException);
   });
 
+  it('says what the link is for, without guest data', async () => {
+    const { service, eventModel } = setup({ event: { _id: EVENT, title: 'Cưới', host: { _id: HOST, name: 'Lan' }, cohosts: [OTHER] } as any });
+    expect(await service.cohostInvite(EVENT, KEY)).toMatchObject({ title: 'Cưới', hostName: 'Lan', hostId: HOST, cohosts: [OTHER], full: false });
+    expect(eventModel.findOne.mock.calls[0][0]).toMatchObject({ _id: EVENT, cohostKey: KEY });
+    expect(eventModel.findOne.mock.results[0].value.select.mock.calls[0][0]).not.toMatch(/guests|gifts|expenses/);
+    await expect(service.cohostInvite(EVENT, 'nope')).rejects.toBeInstanceOf(NotFoundException);
+  });
+
   it('does nothing for the host or a co-host, refuses a wrong key', async () => {
     const { service, eventModel } = setup({ event: { _id: EVENT, title: 'Cưới', host: HOST, cohosts: [OTHER] } as any });
     await service.joinAsCohost(EVENT, KEY, HOST);

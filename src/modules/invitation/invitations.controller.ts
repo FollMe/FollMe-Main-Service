@@ -158,6 +158,12 @@ export class invitationsController {
     return await this.invitationsService.cohostKey(id, req.user._id, rotate === true);
   }
 
+  /** What the host's link is for, shown before signing in and accepting. */
+  @Get('events/:id/cohost-invite/:key')
+  async cohostInvite(@Param('id') id: string, @Param('key') key: string) {
+    return await this.invitationsService.cohostInvite(id, key);
+  }
+
   /** Opening the host's link, signed in: manage the event with them. */
   @Post('events/:id/cohosts')
   @UseGuards(AuthGuard("jwt"))

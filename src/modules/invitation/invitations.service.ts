@@ -671,6 +671,34 @@ export class InvitationsService {
     return this.secretKey('cohostKey', eventId, userId, rotate);
   }
 
+  /**
+   * What the host's link is for, before the person opening it signs in and
+   * accepts: the event and who invites them. No guest data.
+   */
+  async cohostInvite(eventId: string, key: string) {
+    assertObjectId(eventId);
+    assertKey(key);
+    const event: any = await this.eventModel.findOne({ _id: eventId, isDeleted: { $ne: true }, cohostKey: key })
+      .select('title startAt type groomName brideName host cohosts')
+      .populate('host', 'name');
+    if (!event) {
+      throw new NotFoundException();
+    }
+    const cohosts = (event.cohosts ?? []).map(String);
+    return {
+      _id: event._id,
+      title: event.title,
+      startAt: event.startAt,
+      type: event.type,
+      groomName: event.groomName,
+      brideName: event.brideName,
+      hostName: event.host?.name ?? '',
+      hostId: String(event.host?._id ?? event.host),
+      cohosts,
+      full: cohosts.length >= MAX_COHOSTS,
+    };
+  }
+
   /** Someone signed in opens the host's link: they manage the event from now on. */
   async joinAsCohost(eventId: string, key: string, userId: string) {
     assertObjectId(eventId);
