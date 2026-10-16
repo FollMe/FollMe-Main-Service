@@ -34,7 +34,7 @@ const PUBLIC_EVENT_FIELDS = '_id title location mapLocation startAt rsvpBy type 
 // Fields of a guest the host sees.
 const HOST_GUEST_FIELDS = '_id name mail viewed source rsvp sentAt remindedAt thankedAt group table arrivedAt arrivedCount gift';
 // Fields of a guest the reception desk sees: who is expected, who came.
-const DESK_GUEST_FIELDS = '_id name group table source rsvp.status rsvp.count arrivedAt arrivedCount';
+const DESK_GUEST_FIELDS = '_id name group table source rsvp.status rsvp.count rsvp.vegetarian arrivedAt arrivedCount';
 // What a copy of an event takes from it (for another ceremony of the same wedding)
 const DUPLICATED_FIELDS = 'title location mapLocation startAt type theme groomName brideName message allowPublicLink '
   + 'music scratchDate seatsPerTable gifts program photos';
@@ -1058,10 +1058,13 @@ export function formatViDate(date: Date) {
 }
 
 function toRsvp(body: RsvpDTO) {
+  // Someone not coming brings nobody.
+  const count = body.status === 'declined' ? 0 : (body.count ?? 1);
+  const vegetarian = Math.min(body.vegetarian ?? 0, count);
   return {
     status: body.status,
-    // Someone not coming brings nobody.
-    count: body.status === 'declined' ? 0 : (body.count ?? 1),
+    count,
+    ...(vegetarian > 0 ? { vegetarian } : {}),
     note: body.note?.trim() ?? '',
     respondedAt: new Date(),
   };
@@ -1071,7 +1074,7 @@ function toRsvp(body: RsvpDTO) {
 export function summarize(guests: Guest[]) {
   const summary = {
     invited: guests.length, sent: 0, opened: 0, attending: 0, maybe: 0, declined: 0, pending: 0, headcount: 0,
-    arrived: 0, arrivedPeople: 0, gifts: 0, giftTotal: 0,
+    arrived: 0, arrivedPeople: 0, gifts: 0, giftTotal: 0, vegetarian: 0,
   };
   for (const guest of guests) {
     if (guest.sentAt) {
@@ -1089,6 +1092,7 @@ export function summarize(guests: Guest[]) {
     }
     if (status === 'attending') {
       summary.headcount += guest.rsvp.count || 1;
+      summary.vegetarian += guest.rsvp.vegetarian || 0;
     }
     if (guest.arrivedAt) {
       summary.arrived++;

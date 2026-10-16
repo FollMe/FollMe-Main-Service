@@ -121,6 +121,18 @@ describe('RSVP', () => {
     expect(guestModel.updateOne).toHaveBeenCalledWith({ _id: GUEST }, { $set: { rsvp: res.rsvp } });
   });
 
+  it('keeps how many eat vegetarian, never more than come', async () => {
+    const { service } = setup();
+    expect((await service.rsvpGuest(GUEST, { status: 'attending', count: 3, vegetarian: 2 })).rsvp.vegetarian).toBe(2);
+    expect((await service.rsvpGuest(GUEST, { status: 'attending', count: 2, vegetarian: 5 })).rsvp.vegetarian).toBe(2);
+    expect((await service.rsvpGuest(GUEST, { status: 'declined', vegetarian: 1 })).rsvp.vegetarian).toBeUndefined();
+    expect((await service.rsvpGuest(GUEST, { status: 'attending', count: 2, vegetarian: 0 })).rsvp.vegetarian).toBeUndefined();
+    const props = async body => (await validate(plainToInstance(PublicRsvpDTO, body))).map(e => e.property);
+    expect(await props({ name: 'An', status: 'attending', count: 2, vegetarian: 1 })).toEqual([]);
+    expect(await props({ name: 'An', status: 'attending', vegetarian: -1 })).toEqual(['vegetarian']);
+    expect(await props({ name: 'An', status: 'attending', vegetarian: 1.5 })).toEqual(['vegetarian']);
+  });
+
   it('refuses answers after the event started', async () => {
     const { service, guestModel } = setup({ event: { _id: EVENT, startAt: new Date(Date.now() - 1000) } });
     await expect(service.rsvpGuest(GUEST, { status: 'attending' })).rejects.toBeInstanceOf(BadRequestException);
@@ -183,15 +195,15 @@ describe('wishes', () => {
 describe('summarize', () => {
   it('counts answers and headcount', () => {
     const s = summarize([
-      { viewed: 2, sentAt: new Date(), rsvp: { status: 'attending', count: 2 } },
+      { viewed: 2, sentAt: new Date(), rsvp: { status: 'attending', count: 2, vegetarian: 1 } },
       { viewed: 1, rsvp: { status: 'attending', count: 1 } },
       { viewed: 1, rsvp: { status: 'declined', count: 0 } },
-      { viewed: 0, rsvp: { status: 'maybe', count: 1 } },
+      { viewed: 0, rsvp: { status: 'maybe', count: 1, vegetarian: 1 } },
       { viewed: 0 },
     ] as any);
     expect(s).toEqual({
       invited: 5, sent: 1, opened: 3, attending: 2, maybe: 1, declined: 1, pending: 1, headcount: 3, arrived: 0, arrivedPeople: 0,
-      gifts: 0, giftTotal: 0,
+      gifts: 0, giftTotal: 0, vegetarian: 1,
     });
   });
 
