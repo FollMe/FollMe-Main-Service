@@ -1,7 +1,7 @@
 import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { plainToInstance } from 'class-transformer';
 import { validate } from 'class-validator';
-import { InvitationsService, foldName, ogImage, owned, shownGuestPhotos, summarize, tidyExpense, tidyProgram, tidyTask } from './invitations.service';
+import { InvitationsService, foldName, ogImage, owned, shownGuestPhotos, summarize, tidyExpense, tidyProgram, tidyStory, tidyTask } from './invitations.service';
 import { PublicRsvpDTO, RsvpDTO } from './dtos/rsvp.dto';
 import { CreateInvitationDTO } from './dtos/createInvitation.dto';
 import { UpdateInvitationDTO } from './dtos/updateInvitation.dto';
@@ -1397,5 +1397,33 @@ describe('a guest checks themselves in', () => {
     const { service, guestModel } = make(null);
     await service.arriveSelf(GUEST, {}, at(0));
     expect(guestModel.findOneAndUpdate.mock.calls[0][1][0].$set.arrivedCount).toEqual({ $ifNull: ['$arrivedCount', 1] });
+  });
+});
+
+describe('the couple\'s story', () => {
+  it('keeps their order, tidies lines and blank runs, drops untitled moments', () => {
+    expect(tidyStory([
+      { when: '  Mùa thu   2019 ', title: ' Lần đầu   gặp nhau ', text: 'Quán cà phê   nhỏ\n\n\n\nở Đà Lạt.  ' },
+      { title: '   ' },
+      { when: '', title: 'Ngày cầu hôn', text: '' },
+    ] as any)).toEqual([
+      { when: 'Mùa thu 2019', title: 'Lần đầu gặp nhau', text: 'Quán cà phê nhỏ\n\nở Đà Lạt.' },
+      { title: 'Ngày cầu hôn' },
+    ]);
+  });
+
+  it('is saved with the event and shown to guests', async () => {
+    const { service, eventModel } = setup();
+    await service.update(EVENT, HOST, { story: [{ when: '2021', title: 'Tỏ tình' }] } as any, 'x@y');
+    expect(eventModel.findOneAndUpdate.mock.calls[0][1].$set.story).toEqual([{ when: '2021', title: 'Tỏ tình' }]);
+  });
+
+  it('validates the moments', async () => {
+    const props = async story => (await validate(plainToInstance(CreateInvitationDTO, {
+      title: 'Cưới', location: 'HN', startAt: '2027-01-01T04:00:00Z', story,
+    }))).map(e => e.property);
+    expect(await props([{ title: 'Ok', text: 'x'.repeat(300) }])).not.toContain('story');
+    expect(await props([{ title: 'x'.repeat(61) }])).toContain('story');
+    expect(await props(Array.from({ length: 9 }, () => ({ title: 'x' })))).toContain('story');
   });
 });
