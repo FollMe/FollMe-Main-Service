@@ -2,7 +2,7 @@ import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { plainToInstance } from 'class-transformer';
 import { validate } from 'class-validator';
 import { InvitationsService, foldName, ogImage, owned, summarize, tidyExpense, tidyProgram, tidyTask } from './invitations.service';
-import { PublicRsvpDTO } from './dtos/rsvp.dto';
+import { PublicRsvpDTO, RsvpDTO } from './dtos/rsvp.dto';
 import { CreateInvitationDTO } from './dtos/createInvitation.dto';
 import { UpdateInvitationDTO } from './dtos/updateInvitation.dto';
 import { PhotoOrderDTO } from './dtos/photo.dto';
@@ -120,6 +120,15 @@ describe('RSVP', () => {
     const res = await service.rsvpGuest(GUEST, { status: 'declined', count: 3, note: ' Chúc mừng! ' });
     expect(res.rsvp).toMatchObject({ status: 'declined', count: 0, note: 'Chúc mừng!' });
     expect(guestModel.updateOne).toHaveBeenCalledWith({ _id: GUEST }, { $set: { rsvp: res.rsvp } });
+  });
+
+  it('keeps the song a guest coming would like to hear', async () => {
+    const { service } = setup();
+    expect((await service.rsvpGuest(GUEST, { status: 'attending', song: '  Ngày   đầu tiên – Đức Phúc ' })).rsvp.song)
+      .toBe('Ngày đầu tiên – Đức Phúc');
+    expect((await service.rsvpGuest(GUEST, { status: 'declined', song: 'Hơn cả yêu' })).rsvp.song).toBeUndefined();
+    expect((await service.rsvpGuest(GUEST, { status: 'maybe', song: '   ' })).rsvp.song).toBeUndefined();
+    expect(await validate(plainToInstance(RsvpDTO, { status: 'attending', song: 'x'.repeat(101) }))).toHaveLength(1);
   });
 
   it('keeps how many eat vegetarian, never more than come', async () => {

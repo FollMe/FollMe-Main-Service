@@ -6,6 +6,7 @@ export class Rsvp {
   count: number;
   vegetarian?: number;
   note: string;
+  song?: string;
   respondedAt: Date;
 }
 
@@ -53,6 +54,8 @@ const RsvpSchema = new Schema({
   // Of them, how many eat vegetarian (suất chay); unset when none
   vegetarian: { type: Number },
   note: { type: String, default: '' },
+  // A song they would like to hear at the party; unset when none
+  song: { type: String },
   respondedAt: { type: Date },
 }, { _id: false });
 

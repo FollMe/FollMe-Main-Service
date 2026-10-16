@@ -1,5 +1,5 @@
-import { IsIn, IsInt, IsNotEmpty, IsOptional, Max, MaxLength, Min } from "class-validator";
-import { MAX_RSVP_COUNT, RSVP_STATUSES } from "../invitation.constants";
+import { IsIn, IsInt, IsNotEmpty, IsOptional, IsString, Max, MaxLength, Min } from "class-validator";
+import { MAX_RSVP_COUNT, MAX_SONG, RSVP_STATUSES } from "../invitation.constants";
 
 export class RsvpDTO {
   @IsIn(RSVP_STATUSES)
@@ -22,6 +22,12 @@ export class RsvpDTO {
   @IsOptional()
   @MaxLength(300)
   note?: string;
+
+  /** A song they would like to hear at the party, for the band or DJ. */
+  @IsOptional()
+  @IsString()
+  @MaxLength(MAX_SONG, { message: `Tên bài hát tối đa ${MAX_SONG} ký tự` })
+  song?: string;
 }
 
 /** RSVP through the public link: the guest says who they are. */
