@@ -21,6 +21,7 @@ export class Event {
   seatsPerTable?: number;
   rsvpBy?: Date;
   gifts?: Gift[];
+  program?: ProgramItem[];
   photos?: Photo[];
   screenKey?: string;
   deskKey?: string;
@@ -36,6 +37,12 @@ export class Photo {
   height: number;
 }
 
+/** A moment of the day: "18:00", "Khai tiệc" (Vietnam time, on the event's day). */
+export class ProgramItem {
+  time: string;
+  label: string;
+}
+
 export class Gift {
   side: string;
   bankBin: string;
@@ -48,6 +55,11 @@ const GiftSchema = new Schema({
   bankBin: { type: String, required: true },
   accountNumber: { type: String, required: true },
   accountName: { type: String, default: '' },
+}, { _id: false });
+
+const ProgramItemSchema = new Schema({
+  time: { type: String, required: true },
+  label: { type: String, required: true },
 }, { _id: false });
 
 const PhotoSchema = new Schema({
@@ -84,6 +96,8 @@ export const EventSchema = new Schema({
   // answers stay open after it
   rsvpBy: { type: Date },
   gifts: { type: [GiftSchema], default: undefined },
+  // In time order; unset when the host gave none
+  program: { type: [ProgramItemSchema], default: undefined },
   photos: { type: [PhotoSchema], default: undefined },
   // Secret part of the venue screen link (shown on a TV at the party, run
   // by whoever the host sends the link to). Never sent to guests.
