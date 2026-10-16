@@ -2,7 +2,8 @@ import { Type } from "class-transformer";
 import { IsNotEmpty, IsArray, ArrayMaxSize, IsOptional, IsDateString, IsIn, MaxLength, IsBoolean, ValidateNested, IsInt, Min, Max } from "class-validator";
 import { GuestDTO } from "./guest.dto";
 import { GiftDTO } from "./gift.dto";
-import { EVENT_MUSIC, EVENT_THEMES, EVENT_TYPES, MAX_GIFT_ACCOUNTS, MAX_GUESTS_PER_REQUEST, MAX_SEATS_PER_TABLE } from "../invitation.constants";
+import { ProgramItemDTO } from "./program.dto";
+import { EVENT_MUSIC, EVENT_THEMES, EVENT_TYPES, MAX_GIFT_ACCOUNTS, MAX_GUESTS_PER_REQUEST, MAX_PROGRAM_ITEMS, MAX_SEATS_PER_TABLE } from "../invitation.constants";
 
 /** Every field is optional; only the given ones change. */
 export class UpdateInvitationDTO {
@@ -77,6 +78,14 @@ export class UpdateInvitationDTO {
   @ValidateNested({ each: true })
   @Type(() => GiftDTO)
   gifts?: GiftDTO[];
+
+  /** The program of the day, shown on the invitation; an empty list removes it. */
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(MAX_PROGRAM_ITEMS)
+  @ValidateNested({ each: true })
+  @Type(() => ProgramItemDTO)
+  program?: ProgramItemDTO[];
 
   /** New guests to invite (emails are sent like on creation). */
   @IsOptional()

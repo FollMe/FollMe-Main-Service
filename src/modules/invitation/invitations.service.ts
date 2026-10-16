@@ -15,6 +15,7 @@ import { UpdateInvitationDTO } from './dtos/updateInvitation.dto';
 import { GuestDTO } from './dtos/guest.dto';
 import { UpdateGuestDTO } from './dtos/updateGuest.dto';
 import { GiftDTO } from './dtos/gift.dto';
+import { ProgramItemDTO } from './dtos/program.dto';
 import { PublicRsvpDTO, RsvpDTO } from './dtos/rsvp.dto';
 import { WishDTO } from './dtos/wish.dto';
 import { ArrivalDTO, WalkInDTO } from './dtos/desk.dto';
@@ -26,7 +27,7 @@ const templateStr = fs.readFileSync(path.resolve(process.cwd(), 'src/templates/s
 const template = Handlebars.compile(templateStr);
 
 // Fields of an event that guests may see (no host id, no counters).
-const PUBLIC_EVENT_FIELDS = '_id title location mapLocation startAt rsvpBy type theme groomName brideName message allowPublicLink music scratchDate gifts photos';
+const PUBLIC_EVENT_FIELDS = '_id title location mapLocation startAt rsvpBy type theme groomName brideName message allowPublicLink music scratchDate gifts photos program';
 // Fields of a guest the host sees.
 const HOST_GUEST_FIELDS = '_id name mail viewed source rsvp sentAt remindedAt thankedAt group table arrivedAt arrivedCount gift';
 // Fields of a guest the reception desk sees: who is expected, who came.
@@ -35,6 +36,7 @@ const DESK_GUEST_FIELDS = '_id name group table source rsvp.status rsvp.count ar
 const EDITABLE_FIELDS = [
   'title', 'location', 'mapLocation', 'startAt', 'type', 'theme',
   'groomName', 'brideName', 'message', 'allowPublicLink', 'music', 'scratchDate', 'gifts', 'seatsPerTable', 'rsvpBy',
+  'program',
 ] as const;
 
 function pickEditable(body: CreateInvitationDTO | UpdateInvitationDTO) {
@@ -45,11 +47,23 @@ function pickEditable(body: CreateInvitationDTO | UpdateInvitationDTO) {
       if (Array.isArray(value)) {
         out.gifts = (value as GiftDTO[]).map(pickGift);
       }
+    } else if (key === 'program') {
+      if (Array.isArray(value)) {
+        out.program = tidyProgram(value as ProgramItemDTO[]);
+      }
     } else if (value !== undefined) {
       out[key] = typeof value === 'string' ? value.trim() : value;
     }
   }
   return out;
+}
+
+/** Only time and label, labels on one line, in time order (same times keep their order). */
+export function tidyProgram(items: ProgramItemDTO[]) {
+  return items
+    .map(item => ({ time: item.time, label: item.label.replace(/\s+/g, ' ').trim() }))
+    .filter(item => item.label)
+    .sort((a, b) => a.time.localeCompare(b.time));
 }
 
 /** Only the known fields of a gift account, account name as banks print it. */
@@ -694,7 +708,7 @@ export class InvitationsService {
 
   /** What the reception desk shows: the event, and every guest with their answer and check-in. */
   async desk(eventId: string, key: string) {
-    const event = await this.deskEvent(eventId, key, '_id title type groomName brideName startAt location seatsPerTable');
+    const event = await this.deskEvent(eventId, key, '_id title type groomName brideName startAt location seatsPerTable program');
     const guests = await this.guestModel.find({ event: eventId, isDeleted: { $ne: true } })
       .sort({ _id: 1 })
       .select(DESK_GUEST_FIELDS);

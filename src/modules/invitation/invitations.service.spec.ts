@@ -1,7 +1,7 @@
 import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { plainToInstance } from 'class-transformer';
 import { validate } from 'class-validator';
-import { InvitationsService, ogImage, summarize } from './invitations.service';
+import { InvitationsService, ogImage, summarize, tidyProgram } from './invitations.service';
 import { PublicRsvpDTO } from './dtos/rsvp.dto';
 import { CreateInvitationDTO } from './dtos/createInvitation.dto';
 import { UpdateInvitationDTO } from './dtos/updateInvitation.dto';
@@ -581,6 +581,49 @@ describe('seating', () => {
     expect(await props(10)).toEqual([]);
     expect(await props(1)).toEqual(['seatsPerTable']);
     expect(await props(31)).toEqual(['seatsPerTable']);
+  });
+});
+
+describe('program', () => {
+  it('keeps the program tidied, in time order', async () => {
+    const { service, saved, eventModel } = setup();
+    const program = [
+      { time: '18:00', label: ' Khai   tiệc ' },
+      { time: '17:00', label: 'Đón khách', extra: 'x' },
+      { time: '17:30', label: '   ' },
+      { time: '17:00', label: 'Chụp ảnh' },
+    ];
+    await service.createOne({ title: 'A', location: 'B', program, guests: [] } as any, HOST, 'h@x');
+    expect(saved[0].program).toEqual([
+      { time: '17:00', label: 'Đón khách' },
+      { time: '17:00', label: 'Chụp ảnh' },
+      { time: '18:00', label: 'Khai tiệc' },
+    ]);
+    await service.update(EVENT, HOST, { program: [] } as any, 'h@x');
+    expect(eventModel.findOneAndUpdate.mock.calls[0][1].$set).toEqual({ program: [] });
+    expect(tidyProgram([])).toEqual([]);
+  });
+
+  it('guests, the venue screen and the desk see it', async () => {
+    const { service, guestModel, eventModel } = setup();
+    guestModel.findOne = jest.fn(() => query(null));
+    await service.findGuest(GUEST).catch(() => null);
+    expect(guestModel.findOne.mock.results[0].value.populate.mock.calls[0][1]).toContain('program');
+    guestModel.find = jest.fn(() => query([]));
+    await service.desk(EVENT, 'c'.repeat(32));
+    expect(eventModel.findOne.mock.results[0].value.select.mock.calls[0][0]).toContain('program');
+  });
+
+  it('validates times, labels and length', async () => {
+    const props = async program => (await validate(plainToInstance(UpdateInvitationDTO, { program })))
+      .map(e => e.property);
+    expect(await props([{ time: '07:05', label: 'Lễ gia tiên' }, { time: '23:59', label: 'x' }])).toEqual([]);
+    expect(await props([{ time: '24:00', label: 'x' }])).toEqual(['program']);
+    expect(await props([{ time: '7:00', label: 'x' }])).toEqual(['program']);
+    expect(await props([{ time: '18:00', label: '' }])).toEqual(['program']);
+    expect(await props([{ time: '18:00', label: 'x'.repeat(61) }])).toEqual(['program']);
+    expect(await props(Array.from({ length: 9 }, () => ({ time: '18:00', label: 'x' })))).toEqual(['program']);
+    expect(await props('18:00 Khai tiệc')).toEqual(['program']);
   });
 });
 
