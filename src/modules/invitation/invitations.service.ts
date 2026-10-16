@@ -17,12 +17,13 @@ import { UpdateGuestDTO } from './dtos/updateGuest.dto';
 import { GiftDTO } from './dtos/gift.dto';
 import { ProgramItemDTO } from './dtos/program.dto';
 import { ExpenseDTO, UpdateExpenseDTO } from './dtos/expense.dto';
+import { TaskDTO, UpdateTaskDTO } from './dtos/task.dto';
 import { PublicRsvpDTO, RsvpDTO } from './dtos/rsvp.dto';
 import { WishDTO } from './dtos/wish.dto';
 import { ArrivalDTO, WalkInDTO } from './dtos/desk.dto';
 import { GiftGiverDTO, ReceivedGiftDTO } from './dtos/receivedGift.dto';
 import { SeatDTO } from './dtos/seating.dto';
-import { MAX_EXPENSES, MAX_PHOTOS, MAX_WISHES_SHOWN } from './invitation.constants';
+import { MAX_EXPENSES, MAX_PHOTOS, MAX_TASKS, MAX_WISHES_SHOWN } from './invitation.constants';
 
 const templateStr = fs.readFileSync(path.resolve(process.cwd(), 'src/templates/sendInvitation.template.hbs')).toString('utf8')
 const template = Handlebars.compile(templateStr);
@@ -79,6 +80,15 @@ export function tidyExpense(body: Partial<ExpenseDTO> | UpdateExpenseDTO) {
     amount: body.amount ?? undefined,
     paid: body.paid ?? undefined,
     note: text(body.note),
+  };
+}
+
+/** A task's known fields, its label on one line. */
+export function tidyTask(item: Partial<TaskDTO>) {
+  return {
+    label: item.label?.replace(/\s+/g, ' ').trim() ?? '',
+    ...(item.due ? { due: new Date(item.due) } : {}),
+    ...(item.link ? { link: item.link } : {}),
   };
 }
 
@@ -148,7 +158,7 @@ export class InvitationsService {
     assertObjectId(eventId);
 
     const invitation = await this.eventModel.findOne({ isDeleted: { $ne: true }, host: userId, _id: eventId })
-      .select('-isDeleted -host +expenses')
+      .select('-isDeleted -host +expenses +checklist')
       .populate('guests', HOST_GUEST_FIELDS);
 
     if (!invitation) {
@@ -708,6 +718,85 @@ export class InvitationsService {
       throw new NotFoundException();
     }
     return { _id: expenseId };
+  }
+
+  // ---------- Checklist (việc cần làm) ----------
+
+  /** Adds tasks at the end of the checklist, as long as it stays within MAX_TASKS. */
+  async addTasks(eventId: string, userId: string, items: TaskDTO[]) {
+    assertObjectId(eventId);
+    const tasks = items
+      .map(item => ({ _id: new mongoose.Types.ObjectId(), ...tidyTask(item), done: false }))
+      .filter(task => task.label);
+    if (!tasks.length) {
+      throw new BadRequestException('Vui lòng nhập việc cần làm');
+    }
+    const res = await this.eventModel.updateOne(
+      {
+        _id: eventId, host: userId, isDeleted: { $ne: true },
+        $expr: { $lte: [{ $add: [{ $size: { $ifNull: ['$checklist', []] } }, tasks.length] }, MAX_TASKS] },
+      },
+      { $push: { checklist: { $each: tasks } } },
+    );
+    if (!res.modifiedCount) {
+      // Not theirs, or the list would be too long
+      await this.hostEvent(eventId, userId, '_id');
+      throw new BadRequestException(`Tối đa ${MAX_TASKS} việc`);
+    }
+    return tasks;
+  }
+
+  /** Renames, re-dates, ticks or unticks a task. */
+  async updateTask(eventId: string, taskId: string, userId: string, body: UpdateTaskDTO) {
+    assertObjectId(eventId);
+    assertObjectId(taskId);
+    const $set: Record<string, unknown> = {};
+    const $unset: Record<string, ''> = {};
+    if (body.label !== undefined) {
+      const label = tidyTask({ label: body.label }).label;
+      if (!label) {
+        throw new BadRequestException('Vui lòng nhập việc cần làm');
+      }
+      $set['checklist.$.label'] = label;
+    }
+    if (body.due === null) {
+      $unset['checklist.$.due'] = '';
+    } else if (body.due !== undefined) {
+      $set['checklist.$.due'] = new Date(body.due);
+    }
+    if (body.done === true) {
+      $set['checklist.$.done'] = true;
+      $set['checklist.$.doneAt'] = new Date();
+    } else if (body.done === false) {
+      $set['checklist.$.done'] = false;
+      $unset['checklist.$.doneAt'] = '';
+    }
+    if (!Object.keys($set).length && !Object.keys($unset).length) {
+      throw new BadRequestException('Không có gì để cập nhật');
+    }
+    const event: any = await this.eventModel.findOneAndUpdate(
+      { _id: eventId, host: userId, isDeleted: { $ne: true }, 'checklist._id': taskId },
+      { ...(Object.keys($set).length ? { $set } : {}), ...(Object.keys($unset).length ? { $unset } : {}) },
+      { new: true },
+    ).select({ checklist: { $elemMatch: { _id: taskId } } });
+    const task = event?.checklist?.[0];
+    if (!task) {
+      throw new NotFoundException();
+    }
+    return task;
+  }
+
+  async removeTask(eventId: string, taskId: string, userId: string) {
+    assertObjectId(eventId);
+    assertObjectId(taskId);
+    const res = await this.eventModel.updateOne(
+      { _id: eventId, host: userId, isDeleted: { $ne: true }, 'checklist._id': taskId },
+      { $pull: { checklist: { _id: taskId } } },
+    );
+    if (!res.modifiedCount) {
+      throw new NotFoundException();
+    }
+    return { _id: taskId };
   }
 
   // ---------- Venue screen ----------

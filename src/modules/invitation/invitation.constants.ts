@@ -30,3 +30,10 @@ export const EXPENSE_CATEGORIES = [
 export const MAX_EXPENSES = 100;
 export const MAX_EXPENSE_LABEL = 60;
 export const MAX_EXPENSE_NOTE = 100;
+// The checklist (việc cần làm) before and after the day
+export const MAX_TASKS = 60;
+export const MAX_TASK_LABEL = 80;
+// The page a task leads to, if any
+export const TASK_LINKS = [
+  'date', 'budget', 'guests', 'send', 'remind', 'program', 'photos', 'seating', 'desk', 'screen', 'ledger', 'thanks', 'guestbook',
+] as const;
