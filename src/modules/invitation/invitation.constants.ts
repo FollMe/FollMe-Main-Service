@@ -37,3 +37,5 @@ export const MAX_TASK_LABEL = 80;
 export const TASK_LINKS = [
   'date', 'budget', 'guests', 'send', 'remind', 'program', 'photos', 'seating', 'desk', 'screen', 'ledger', 'thanks', 'guestbook',
 ] as const;
+// People who manage an event with its host (the other half of the couple, a parent)
+export const MAX_COHOSTS = 3;
