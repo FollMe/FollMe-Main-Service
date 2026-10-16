@@ -212,6 +212,25 @@ export class invitationsController {
     return await this.invitationsService.addPhoto(id, req.user._id, file);
   }
 
+  /** Hide a guest's photo from the cards; DELETE on the same path shows it again. */
+  @Put('events/:id/guest-photos/:photoId/hide')
+  @UseGuards(AuthGuard("jwt"))
+  async hideGuestPhoto(@Request() req, @Param('id') id: string, @Param('photoId') photoId: string) {
+    return await this.invitationsService.hideGuestPhoto(id, photoId, req.user._id, true);
+  }
+
+  @Delete('events/:id/guest-photos/:photoId/hide')
+  @UseGuards(AuthGuard("jwt"))
+  async showGuestPhoto(@Request() req, @Param('id') id: string, @Param('photoId') photoId: string) {
+    return await this.invitationsService.hideGuestPhoto(id, photoId, req.user._id, false);
+  }
+
+  @Delete('events/:id/guest-photos/:photoId')
+  @UseGuards(AuthGuard("jwt"))
+  async deleteGuestPhoto(@Request() req, @Param('id') id: string, @Param('photoId') photoId: string) {
+    return await this.invitationsService.deleteGuestPhoto(id, photoId, req.user._id);
+  }
+
   @Put('events/:id/photos/order')
   @UseGuards(AuthGuard("jwt"))
   async orderPhotos(@Request() req, @Param('id') id: string, @Body() body: PhotoOrderDTO) {
@@ -283,6 +302,18 @@ export class invitationsController {
   @Put('invitations/:id/rsvp')
   async rsvp(@Param('id') id: string, @Body() body: RsvpDTO) {
     return await this.invitationsService.rsvpGuest(id, body);
+  }
+
+  /** A photo the guest took at the party, from their card (multipart "photo"). */
+  @Post('invitations/:id/photos')
+  @UseInterceptors(FileInterceptor('photo', { limits: { fileSize: MAX_PHOTO_BYTES, files: 1 } }))
+  async addGuestPhoto(@Param('id') id: string, @UploadedFile(photoPipe) file: Express.Multer.File) {
+    return await this.invitationsService.addGuestPhoto(id, file);
+  }
+
+  @Delete('invitations/:id/photos/:photoId')
+  async removeGuestPhoto(@Param('id') id: string, @Param('photoId') photoId: string) {
+    return await this.invitationsService.removeGuestPhoto(id, photoId);
   }
 
   /** "I sent a gift" by bank transfer, from the guest's card; DELETE takes it back. */
