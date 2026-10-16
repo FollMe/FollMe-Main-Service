@@ -433,6 +433,20 @@ describe('venue screen', () => {
     expect(Date.parse(res.cursor)).toBeLessThan(Date.now());
     await expect(service.screen(EVENT, KEY, 'yesterday')).rejects.toBeInstanceOf(BadRequestException);
   });
+
+  it('shows the guests\' newest photos, not the hidden ones, nor where the files live', async () => {
+    const guestPhotos = Array.from({ length: 35 }, (_, i) => ({
+      _id: `p${i}`, url: `u${i}`, publicId: `x${i}`, name: 'Khách', guest: GUEST, at: new Date(2026, 11, 12, 12, i), hidden: i === 34,
+    }));
+    const { service } = setup({ event: { _id: EVENT, title: 'Cưới', guestPhotos } as any });
+    const first: any = await service.screen(EVENT, KEY);
+    expect(first.event.guestPhotos).toBeUndefined();
+    expect(first.photos).toHaveLength(30);
+    expect(first.photos[0]._id).toBe('p33');
+    expect(first.photos[0].publicId).toBeUndefined();
+    const poll: any = await service.screen(EVENT, KEY, '2027-01-10T10:00:00.000Z');
+    expect(poll.photos.map(p => p._id)).toEqual(first.photos.map(p => p._id));
+  });
 });
 
 describe('reception desk', () => {
