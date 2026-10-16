@@ -13,6 +13,7 @@ import { SeatingDTO } from './dtos/seating.dto';
 import { ExpenseDTO, UpdateExpenseDTO } from './dtos/expense.dto';
 import { ChecklistDTO, UpdateTaskDTO } from './dtos/task.dto';
 import { DuplicateEventDTO } from './dtos/duplicate.dto';
+import { SlugDTO } from './dtos/slug.dto';
 
 jest.mock('src/sharedServices/mailer.service', () => ({ MailerService: class {} }));
 
@@ -1192,7 +1193,8 @@ describe('remove', () => {
     expect(await service.remove(EVENT, HOST)).toEqual({ _id: EVENT });
     const [filter, update] = eventModel.findOneAndUpdate.mock.calls[0];
     expect(filter).toEqual({ _id: EVENT, host: HOST, isDeleted: { $ne: true } });
-    expect(update.$unset).toEqual({ photos: 1, guestPhotos: 1, screenKey: 1, deskKey: 1, cohostKey: 1 });
+    // Its short link is free again at once
+    expect(update.$unset).toEqual({ photos: 1, guestPhotos: 1, screenKey: 1, deskKey: 1, cohostKey: 1, slug: 1 });
     const { deletedAt } = update.$set;
     expect(update.$set).toEqual({ isDeleted: true, deletedAt: expect.any(Date) });
     // Guests and wishes are purged with it
@@ -1565,5 +1567,43 @@ describe('notes for guests (lưu ý)', () => {
       expect(await props({ notes: [bad] })).toEqual(['notes']);
     }
     expect(await props({ notes: Array(7).fill({ kind: 'kids', text: 'x' }) })).toEqual(['notes']);
+  });
+});
+
+describe('short link (slug)', () => {
+  it('sets a free one, refuses a taken one, removes it', async () => {
+    const { service, eventModel } = setup();
+    expect(await service.setSlug(EVENT, HOST, 'minh-lan')).toEqual({ slug: 'minh-lan' });
+    expect(eventModel.exists).toHaveBeenCalledWith({ slug: 'minh-lan', _id: { $ne: EVENT } });
+    expect(eventModel.updateOne).toHaveBeenCalledWith(expect.objectContaining({ _id: EVENT, $or: [{ host: HOST }, { cohosts: HOST }] }), { $set: { slug: 'minh-lan' } });
+    eventModel.exists = jest.fn(async () => ({ _id: 'other' }));
+    await expect(service.setSlug(EVENT, HOST, 'minh-lan')).rejects.toThrow('Link này đã có người dùng');
+    expect(await service.setSlug(EVENT, HOST, '')).toEqual({ slug: null });
+    expect(eventModel.updateOne).toHaveBeenLastCalledWith(expect.anything(), { $unset: { slug: 1 } });
+  });
+
+  it('a race for the same link: the index says no', async () => {
+    const { service, eventModel } = setup();
+    eventModel.updateOne = jest.fn(async () => { throw Object.assign(new Error('E11000'), { code: 11000 }); });
+    await expect(service.setSlug(EVENT, HOST, 'minh-lan')).rejects.toThrow('Link này đã có người dùng');
+    eventModel.updateOne = jest.fn(async () => ({ matchedCount: 0 }));
+    await expect(service.setSlug(EVENT, OTHER, 'minh-lan')).rejects.toBeInstanceOf(NotFoundException);
+  });
+
+  it('finds the event of a link, only with the shared link on', async () => {
+    const { service, eventModel } = setup({ event: { _id: EVENT } as any });
+    expect(await service.findBySlug('minh-lan')).toEqual({ _id: EVENT });
+    expect(eventModel.findOne).toHaveBeenCalledWith({ slug: 'minh-lan', isDeleted: { $ne: true }, allowPublicLink: true });
+    await expect(service.findBySlug('Minh Lan')).rejects.toBeInstanceOf(NotFoundException);
+    await expect(setup({ event: null }).service.findBySlug('minh-lan')).rejects.toBeInstanceOf(NotFoundException);
+  });
+
+  it('validates the link', async () => {
+    const bad = async slug => (await validate(plainToInstance(SlugDTO, { slug }))).length > 0;
+    expect(await bad('minh-lan')).toBe(false);
+    expect(await bad('')).toBe(false);
+    for (const slug of ['ml', 'Minh-Lan', 'minh lan', '-minh', 'minh-', 'minh--lan', 'mình-lan', 'x'.repeat(41)]) {
+      expect(await bad(slug)).toBe(true);
+    }
   });
 });

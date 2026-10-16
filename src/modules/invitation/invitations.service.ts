@@ -1,7 +1,7 @@
 import * as path from 'path';
 import * as fs from 'fs';
 import { randomBytes } from 'crypto';
-import { BadRequestException, HttpException, HttpStatus, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, HttpException, HttpStatus, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectModel, InjectConnection } from '@nestjs/mongoose';
 import { Event, EventDocument } from './schemas/event.schema';
 import { Guest, GuestDocument } from './schemas/guest.schema';
@@ -30,7 +30,7 @@ import { SeatDTO } from './dtos/seating.dto';
 import {
   GUEST_PHOTOS_AFTER_MS, GUEST_PHOTOS_BEFORE_MS, MAX_COHOSTS, MAX_EXPENSES, MAX_GUEST_PHOTOS, MAX_GUEST_PHOTOS_EACH,
   MAX_PHOTOS, MAX_TASKS, MAX_WISHES_SHOWN, SEAT_FINDER_AFTER_MS, SEAT_FINDER_BEFORE_MS, SEAT_FINDER_RESULTS,
-  SELF_CHECKIN_AFTER_MS, SELF_CHECKIN_BEFORE_MS, TASK_LINKS,
+  SELF_CHECKIN_AFTER_MS, SELF_CHECKIN_BEFORE_MS, SLUG_RE, TASK_LINKS,
 } from './invitation.constants';
 
 const templateStr = fs.readFileSync(path.resolve(process.cwd(), 'src/templates/sendInvitation.template.hbs')).toString('utf8')
@@ -413,7 +413,7 @@ export class InvitationsService {
     // The event as it was, to find its photos
     const event: any = await this.eventModel.findOneAndUpdate(
       { _id: eventId, host: userId, isDeleted: { $ne: true } },
-      { $set: { isDeleted: true, deletedAt }, $unset: { photos: 1, guestPhotos: 1, screenKey: 1, deskKey: 1, cohostKey: 1 } },
+      { $set: { isDeleted: true, deletedAt }, $unset: { photos: 1, guestPhotos: 1, screenKey: 1, deskKey: 1, cohostKey: 1, slug: 1 } },
     ).select('_id photos +guestPhotos');
     if (!event) {
       throw new NotFoundException();
@@ -1306,6 +1306,51 @@ export class InvitationsService {
     await this.eventModel.updateOne({ ...filter, [field]: { $exists: false } }, { $set: { [field]: key } });
     const saved: any = await this.eventModel.findOne(filter).select(`+${field}`);
     return { key: (saved?.[field] ?? key) as string };
+  }
+
+  /**
+   * Sets the shared card's short link (/c/minh-lan), or removes it (''). The
+   * host and co-hosts may; one event per link.
+   */
+  async setSlug(eventId: string, userId: string, slug: string) {
+    assertObjectId(eventId);
+    const filter = { _id: eventId, ...owned(userId), isDeleted: { $ne: true } };
+    if (!slug) {
+      const res = await this.eventModel.updateOne(filter, { $unset: { slug: 1 } });
+      if (!res.matchedCount) {
+        throw new NotFoundException();
+      }
+      return { slug: null };
+    }
+    const taken = await this.eventModel.exists({ slug, _id: { $ne: eventId } });
+    if (taken) {
+      throw new ConflictException('Link này đã có người dùng, bạn chọn tên khác nhé');
+    }
+    try {
+      const res = await this.eventModel.updateOne(filter, { $set: { slug } });
+      if (!res.matchedCount) {
+        throw new NotFoundException();
+      }
+    } catch (err) {
+      // Taken by someone else just now
+      if (err?.code === 11000) {
+        throw new ConflictException('Link này đã có người dùng, bạn chọn tên khác nhé');
+      }
+      throw err;
+    }
+    return { slug };
+  }
+
+  /** The event behind a short link, if its shared link is on. */
+  async findBySlug(slug: string) {
+    if (typeof slug !== 'string' || slug.length > 40 || !SLUG_RE.test(slug)) {
+      throw new NotFoundException();
+    }
+    const event = await this.eventModel.findOne({ slug, isDeleted: { $ne: true }, allowPublicLink: true }).select('_id');
+    if (!event) {
+      throw new NotFoundException();
+    }
+    return { _id: event._id };
   }
 
   /** The venue screen's secret key; `rotate` replaces it. */

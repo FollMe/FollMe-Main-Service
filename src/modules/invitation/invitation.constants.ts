@@ -51,6 +51,12 @@ export const NOTE_KINDS = ['dress', 'parking', 'kids', 'stay', 'other'];
 export const MAX_NOTES = 6;
 export const MAX_NOTE_TITLE = 60;
 export const MAX_NOTE_TEXT = 300;
+
+// A short link for the shared card (/c/minh-lan): 3 to 40 of a-z, 0-9 and
+// single hyphens, not at either end
+export const SLUG_RE = /^[a-z0-9]+(-[a-z0-9]+)*$/;
+export const MIN_SLUG = 3;
+export const MAX_SLUG = 40;
 // Deleted events, guests and wishes are kept this long (to undo a mistake
 // on request), then MongoDB removes them for good.
 export const PURGE_AFTER_SECONDS = 30 * 24 * 60 * 60;
