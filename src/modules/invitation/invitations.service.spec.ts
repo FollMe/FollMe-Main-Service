@@ -1,7 +1,7 @@
 import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { plainToInstance } from 'class-transformer';
 import { validate } from 'class-validator';
-import { InvitationsService, foldName, ogImage, owned, shownGuestPhotos, summarize, tidyExpense, tidyProgram, tidyShuttles, tidyStory, tidyTask } from './invitations.service';
+import { InvitationsService, foldName, ogImage, owned, shownGuestPhotos, summarize, tidyExpense, tidyNotes, tidyProgram, tidyShuttles, tidyStory, tidyTask } from './invitations.service';
 import { PublicRsvpDTO, RsvpDTO } from './dtos/rsvp.dto';
 import { CreateInvitationDTO } from './dtos/createInvitation.dto';
 import { UpdateInvitationDTO } from './dtos/updateInvitation.dto';
@@ -1534,5 +1534,33 @@ describe('shuttles (xe đưa đón)', () => {
     }
     expect(await props({ shuttles: Array(7).fill(ok) })).toEqual(['shuttles']);
     expect(await validate(plainToInstance(RsvpDTO, { status: 'attending', shuttle: 'x'.repeat(25) }))).toHaveLength(1);
+  });
+});
+
+describe('notes for guests (lưu ý)', () => {
+  it('tidies them: a known topic has no title, the host’s own needs one', () => {
+    expect(tidyNotes([
+      { kind: 'dress', title: 'ignored', text: '  Tông pastel,\n\n\n\nnhẹ nhàng ' },
+      { kind: 'other', title: '  Chụp   ảnh ', text: 'Có góc chụp ảnh ở sảnh.' },
+      { kind: 'other', title: ' ', text: 'No title' },
+      { kind: 'parking', text: '   ' },
+    ])).toEqual([
+      { kind: 'dress', text: 'Tông pastel,\n\nnhẹ nhàng' },
+      { kind: 'other', title: 'Chụp ảnh', text: 'Có góc chụp ảnh ở sảnh.' },
+    ]);
+  });
+
+  it('are saved with the event and validated', async () => {
+    const { service, eventModel } = setup();
+    await service.update(EVENT, HOST, { notes: [{ kind: 'parking', text: 'Gửi xe ở hầm B1' }] } as any, 'h@x.vn');
+    expect(eventModel.findOneAndUpdate.mock.calls[0][1].$set.notes).toEqual([{ kind: 'parking', text: 'Gửi xe ở hầm B1' }]);
+    const props = async body => (await validate(plainToInstance(CreateInvitationDTO, {
+      title: 'T', location: 'L', startAt: '2027-01-01T00:00:00Z', ...body,
+    }))).map(e => e.property);
+    expect(await props({ notes: [{ kind: 'kids', text: 'Có khu vui chơi cho bé' }] })).toEqual([]);
+    for (const bad of [{ kind: 'food', text: 'x' }, { kind: 'kids', text: '' }, { kind: 'kids', text: 'x'.repeat(301) }, { kind: 'other', title: 't'.repeat(61), text: 'x' }]) {
+      expect(await props({ notes: [bad] })).toEqual(['notes']);
+    }
+    expect(await props({ notes: Array(7).fill({ kind: 'kids', text: 'x' }) })).toEqual(['notes']);
   });
 });

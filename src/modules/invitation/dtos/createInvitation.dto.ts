@@ -5,7 +5,8 @@ import { GiftDTO } from "./gift.dto";
 import { ProgramItemDTO } from "./program.dto";
 import { StoryItemDTO } from "./story.dto";
 import { ShuttleDTO } from "./shuttle.dto";
-import { EVENT_MUSIC, EVENT_THEMES, EVENT_TYPES, MAX_GIFT_ACCOUNTS, MAX_GIFT_AMOUNT, MAX_GUESTS_PER_REQUEST, MAX_PROGRAM_ITEMS, MAX_SEATS_PER_TABLE, MAX_SHUTTLES, MAX_STORY_ITEMS } from "../invitation.constants";
+import { NoteDTO } from "./note.dto";
+import { EVENT_MUSIC, EVENT_THEMES, EVENT_TYPES, MAX_GIFT_ACCOUNTS, MAX_GIFT_AMOUNT, MAX_GUESTS_PER_REQUEST, MAX_PROGRAM_ITEMS, MAX_NOTES, MAX_SEATS_PER_TABLE, MAX_SHUTTLES, MAX_STORY_ITEMS } from "../invitation.constants";
 
 export class CreateInvitationDTO {
   @IsNotEmpty()
@@ -113,6 +114,14 @@ export class CreateInvitationDTO {
   @ValidateNested({ each: true })
   @Type(() => ShuttleDTO)
   shuttles?: ShuttleDTO[];
+
+  /** Notes for guests, in the host's order; an empty list removes them. */
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(MAX_NOTES, { message: `Tối đa ${MAX_NOTES} lưu ý` })
+  @ValidateNested({ each: true })
+  @Type(() => NoteDTO)
+  notes?: NoteDTO[];
 
   @IsOptional()
   @IsArray()

@@ -45,6 +45,12 @@ export const MAX_SHUTTLES = 6;
 export const MAX_SHUTTLE_LABEL = 60;
 export const MAX_SHUTTLE_FROM = 120;
 export const MAX_SHUTTLE_SEATS = 60;
+
+// "Lưu ý cho khách": short notes by topic (dress code, parking, kids, a place to stay) or the host's own
+export const NOTE_KINDS = ['dress', 'parking', 'kids', 'stay', 'other'];
+export const MAX_NOTES = 6;
+export const MAX_NOTE_TITLE = 60;
+export const MAX_NOTE_TEXT = 300;
 // Deleted events, guests and wishes are kept this long (to undo a mistake
 // on request), then MongoDB removes them for good.
 export const PURGE_AFTER_SECONDS = 30 * 24 * 60 * 60;
