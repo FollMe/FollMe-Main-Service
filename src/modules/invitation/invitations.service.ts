@@ -22,7 +22,7 @@ import { DuplicateEventDTO } from './dtos/duplicate.dto';
 import { PublicRsvpDTO, RsvpDTO } from './dtos/rsvp.dto';
 import { WishDTO } from './dtos/wish.dto';
 import { ArrivalDTO, WalkInDTO } from './dtos/desk.dto';
-import { GiftGiverDTO, ReceivedGiftDTO } from './dtos/receivedGift.dto';
+import { GiftClaimDTO, GiftGiverDTO, ReceivedGiftDTO } from './dtos/receivedGift.dto';
 import { SeatDTO } from './dtos/seating.dto';
 import { MAX_COHOSTS, MAX_EXPENSES, MAX_PHOTOS, MAX_TASKS, MAX_WISHES_SHOWN, TASK_LINKS } from './invitation.constants';
 
@@ -32,7 +32,7 @@ const template = Handlebars.compile(templateStr);
 // Fields of an event that guests may see (no host id, no counters).
 const PUBLIC_EVENT_FIELDS = '_id title location mapLocation startAt rsvpBy type theme groomName brideName message allowPublicLink music scratchDate gifts photos program';
 // Fields of a guest the host sees.
-const HOST_GUEST_FIELDS = '_id name mail viewed source rsvp sentAt remindedAt dayOfAt thankedAt group table arrivedAt arrivedCount gift';
+const HOST_GUEST_FIELDS = '_id name mail viewed source rsvp sentAt remindedAt dayOfAt thankedAt group table arrivedAt arrivedCount gift giftClaim';
 // Fields of a guest the reception desk sees: who is expected, who came.
 const DESK_GUEST_FIELDS = '_id name group table source rsvp.status rsvp.count rsvp.vegetarian arrivedAt arrivedCount';
 // What a copy of an event takes from it (for another ceremony of the same wedding)
@@ -195,7 +195,7 @@ export class InvitationsService {
 
     // Their table too: the card shows it on the day
     const guest: any = await this.guestModel.findOne({ isDeleted: { $ne: true }, _id: guestId })
-      .select('_id name event rsvp table')
+      .select('_id name event rsvp table giftClaim')
       .populate('event', `${PUBLIC_EVENT_FIELDS} host cohosts isDeleted`);
     const event = guest?.event;
     if (!guest || !event || event.isDeleted) {
@@ -420,6 +420,37 @@ export class InvitationsService {
       rsvp,
     });
     return { guestId: guest._id, rsvp };
+  }
+
+  /**
+   * A guest says they sent a gift by bank transfer, the amount if they like.
+   * The host sees it in the gift ledger and records it with a tap; their
+   * own ledger line (gift) is never touched here. Before or after the day.
+   */
+  async claimGift(guestId: string, body: GiftClaimDTO) {
+    assertObjectId(guestId);
+    const guest = await this.guestModel.findOne({ _id: guestId, isDeleted: { $ne: true } }).select('_id event');
+    if (!guest) {
+      throw new NotFoundException();
+    }
+    await this.liveEvent((guest as any).event);
+    const giftClaim = {
+      ...(body.amount ? { amount: body.amount } : {}),
+      ...(body.side ? { side: body.side } : {}),
+      at: new Date(),
+    };
+    await this.guestModel.updateOne({ _id: guestId }, { $set: { giftClaim } });
+    return { guestId, giftClaim };
+  }
+
+  /** Said it by mistake. */
+  async withdrawGiftClaim(guestId: string) {
+    assertObjectId(guestId);
+    const res = await this.guestModel.updateOne({ _id: guestId, isDeleted: { $ne: true } }, { $unset: { giftClaim: 1 } });
+    if (!res.matchedCount) {
+      throw new NotFoundException();
+    }
+    return { guestId };
   }
 
   async wishFromGuest(guestId: string, body: WishDTO) {

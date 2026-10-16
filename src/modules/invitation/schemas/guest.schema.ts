@@ -1,5 +1,5 @@
 import { Schema } from 'mongoose';
-import { PURGE_AFTER_SECONDS, RSVP_STATUSES } from '../invitation.constants';
+import { GIFT_SIDES, PURGE_AFTER_SECONDS, RSVP_STATUSES } from '../invitation.constants';
 
 export class Rsvp {
   status: string;
@@ -13,6 +13,13 @@ export class Rsvp {
 export class ReceivedGift {
   amount?: number;
   note?: string;
+  at: Date;
+}
+
+/** What a guest said they sent by bank transfer, for the host to record. */
+export class GiftClaim {
+  amount?: number;
+  side?: string;
   at: Date;
 }
 
@@ -37,6 +44,7 @@ export class Guest {
   arrivedCount?: number;
   table?: string;
   gift?: ReceivedGift;
+  giftClaim?: GiftClaim;
 }
 
 const RsvpSchema = new Schema({
@@ -52,6 +60,13 @@ const ReceivedGiftSchema = new Schema({
   // VND; none for a gift that is not money ("1 chỉ vàng")
   amount: { type: Number },
   note: { type: String },
+  at: { type: Date, required: true },
+}, { _id: false });
+
+const GiftClaimSchema = new Schema({
+  // VND, if they said; which account (nhà trai, nhà gái) if there are two
+  amount: { type: Number },
+  side: { type: String, enum: GIFT_SIDES },
   at: { type: Date, required: true },
 }, { _id: false });
 
@@ -82,6 +97,8 @@ export const GuestSchema = new Schema({
   table: { type: String },
   // The host's gift ledger; only the host ever sees it
   gift: { type: ReceivedGiftSchema, default: undefined },
+  // Set by the guest on their card: "I sent a gift" (bank transfer)
+  giftClaim: { type: GiftClaimSchema, default: undefined },
 }, { timestamps: true });
 
 // The host's list and every count of an event's guests

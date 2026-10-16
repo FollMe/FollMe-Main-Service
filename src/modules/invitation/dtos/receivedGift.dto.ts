@@ -1,6 +1,6 @@
 import { Type } from "class-transformer";
-import { IsDefined, IsInt, IsNotEmpty, IsOptional, IsString, Max, MaxLength, Min, ValidateNested } from "class-validator";
-import { MAX_GIFT_AMOUNT, MAX_GIFT_NOTE, MAX_GROUP_NAME } from "../invitation.constants";
+import { IsDefined, IsIn, IsInt, IsNotEmpty, IsOptional, IsString, Max, MaxLength, Min, ValidateNested } from "class-validator";
+import { GIFT_SIDES, MAX_GIFT_AMOUNT, MAX_GIFT_NOTE, MAX_GROUP_NAME } from "../invitation.constants";
 
 /** A line of the gift ledger: money in VND, or a note for anything else. */
 export class ReceivedGiftDTO {
@@ -32,4 +32,17 @@ export class GiftGiverDTO {
   @ValidateNested()
   @Type(() => ReceivedGiftDTO)
   gift: ReceivedGiftDTO;
+}
+
+/** A guest says they sent a gift by bank transfer: how much if they like, to which side. */
+export class GiftClaimDTO {
+  @IsOptional()
+  @IsInt({ message: 'Số tiền không hợp lệ' })
+  @Min(0, { message: 'Số tiền không hợp lệ' })
+  @Max(MAX_GIFT_AMOUNT, { message: 'Số tiền quá lớn' })
+  amount?: number;
+
+  @IsOptional()
+  @IsIn(GIFT_SIDES)
+  side?: string;
 }
