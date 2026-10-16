@@ -26,6 +26,11 @@ export class UpdateGuestDTO {
   @IsBoolean()
   thanked?: boolean;
 
+  /** The message with the time, the way and their table, sent the day before. */
+  @IsOptional()
+  @IsBoolean()
+  dayOf?: boolean;
+
   /** Empty to take the guest out of their group. */
   @IsOptional()
   @IsString()

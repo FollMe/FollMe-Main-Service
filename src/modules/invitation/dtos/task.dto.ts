@@ -1,6 +1,6 @@
 import { Type } from "class-transformer";
-import { ArrayMaxSize, ArrayMinSize, IsArray, IsBoolean, IsDateString, IsIn, IsNotEmpty, IsOptional, IsString, MaxLength, ValidateNested } from "class-validator";
-import { MAX_TASKS, MAX_TASK_LABEL, TASK_LINKS } from "../invitation.constants";
+import { ArrayMaxSize, ArrayMinSize, IsArray, IsBoolean, IsDateString, IsNotEmpty, IsOptional, IsString, MaxLength, ValidateNested } from "class-validator";
+import { MAX_TASKS, MAX_TASK_LABEL } from "../invitation.constants";
 
 /** A thing to do, with the day it should be done by. */
 export class TaskDTO {
@@ -13,8 +13,10 @@ export class TaskDTO {
   @IsDateString()
   due?: string;
 
+  /** One of TASK_LINKS; an unknown one is dropped, not refused (the app may know newer pages). */
   @IsOptional()
-  @IsIn(TASK_LINKS)
+  @IsString()
+  @MaxLength(20)
   link?: string;
 }
 

@@ -942,7 +942,11 @@ describe('checklist', () => {
       .map(e => e.property);
     expect(await props([{ label: 'Đặt nhà hàng', due: '2026-07-16T05:00:00.000Z', link: 'seating' }])).toEqual([]);
     expect(await props([])).toEqual(['items']);
-    expect(await props([{ label: 'x', link: 'nowhere' }])).toEqual(['items']);
+    // A page the app knows and the server not yet: the task stays, without its link
+    expect(await props([{ label: 'x', link: 'nowhere' }])).toEqual([]);
+    expect(tidyTask({ label: 'x', link: 'nowhere' })).toEqual({ label: 'x' });
+    expect(tidyTask({ label: 'In tem', link: 'labels' })).toEqual({ label: 'In tem', link: 'labels' });
+    expect(await props([{ label: 'x', link: 'x'.repeat(21) }])).toEqual(['items']);
     expect(await props([{ label: 'x'.repeat(81) }])).toEqual(['items']);
     expect(await props(Array.from({ length: 61 }, () => ({ label: 'x' })))).toEqual(['items']);
     const update = async body => (await validate(plainToInstance(UpdateTaskDTO, body))).map(e => e.property);
@@ -1080,6 +1084,15 @@ describe('guests', () => {
     await service.updateGuest(EVENT, GUEST, HOST, { thanked: false });
     expect(guestModel.findOneAndUpdate.mock.calls[1][1]).toEqual({ $unset: { thankedAt: 1 } });
     expect(await validate(plainToInstance(UpdateGuestDTO, { thanked: 'yes' }))).toHaveLength(1);
+  });
+
+  it('marks and unmarks the message for the day', async () => {
+    const { service, guestModel } = setup();
+    await service.updateGuest(EVENT, GUEST, HOST, { dayOf: true });
+    expect(guestModel.findOneAndUpdate.mock.calls[0][1].$set.dayOfAt).toBeInstanceOf(Date);
+    await service.updateGuest(EVENT, GUEST, HOST, { dayOf: false });
+    expect(guestModel.findOneAndUpdate.mock.calls[1][1]).toEqual({ $unset: { dayOfAt: 1 } });
+    expect(await validate(plainToInstance(UpdateGuestDTO, { dayOf: 'yes' }))).toHaveLength(1);
   });
 
   it('marks and unmarks a reminder', async () => {
