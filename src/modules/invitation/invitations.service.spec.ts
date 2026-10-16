@@ -241,6 +241,13 @@ describe('CreateInvitationDTO', () => {
     expect(await validate(ok)).toEqual([]);
   });
 
+  it('takes the message in English, up to 1000 characters', async () => {
+    const props = async body => (await validate(plainToInstance(CreateInvitationDTO, { ...base, ...body }))).map(e => e.property);
+    expect(await props({ messageEn: 'Together with our families, we invite you.' })).toEqual([]);
+    expect(await props({ messageEn: 'x'.repeat(1001) })).toEqual(['messageEn']);
+    expect(await props({ messageEn: 5 })).toEqual(['messageEn']);
+  });
+
   it('rejects bad gift accounts, a third account and unknown music', async () => {
     const gift = { side: 'groom', bankBin: '970436', accountNumber: '0123456789' };
     const cases = [
@@ -883,13 +890,15 @@ describe('copies of an event', () => {
 
   it('invites the same guests, not walk-ins, answers or the ledger, and mails nobody', async () => {
     const { service, guestModel, mailer } = setup({ event: source as any });
-    guestModel.find = jest.fn(() => query([{ name: 'Cô Ba', mail: 'ba@x.vn', group: 'Nhà gái' }, { name: 'Chú Tư' }]));
+    guestModel.find = jest.fn(() => query([{ name: 'Cô Ba', mail: 'ba@x.vn', group: 'Nhà gái' }, { name: 'Chú Tư' }, { name: 'John', lang: 'en' }]));
     const res = await service.duplicate(EVENT, HOST, { copyGuests: true });
-    expect(res.guests).toBe(2);
+    expect(res.guests).toBe(3);
     expect(guestModel.find.mock.calls[0][0]).toMatchObject({ event: EVENT, $or: [{ source: 'host' }, { source: { $exists: false } }] });
     expect(guestModel.insertMany.mock.calls[0][0]).toEqual([
       { event: EVENT, name: 'Cô Ba', mail: 'ba@x.vn', group: 'Nhà gái', source: 'host' },
       { event: EVENT, name: 'Chú Tư', mail: undefined, group: undefined, source: 'host' },
+      // An English card stays English
+      { event: EVENT, name: 'John', mail: undefined, group: undefined, source: 'host', lang: 'en' },
     ]);
     expect(mailer.sendInBackground).not.toHaveBeenCalled();
   });
@@ -1146,6 +1155,16 @@ describe('guests', () => {
     await service.updateGuest(EVENT, GUEST, HOST, { dayOf: false });
     expect(guestModel.findOneAndUpdate.mock.calls[1][1]).toEqual({ $unset: { dayOfAt: 1 } });
     expect(await validate(plainToInstance(UpdateGuestDTO, { dayOf: 'yes' }))).toHaveLength(1);
+  });
+
+  it('sets the language of the card: English, or back to Vietnamese', async () => {
+    const { service, guestModel } = setup();
+    await service.updateGuest(EVENT, GUEST, HOST, { lang: 'en' });
+    expect(guestModel.findOneAndUpdate.mock.calls[0][1]).toEqual({ $set: { lang: 'en' } });
+    await service.updateGuest(EVENT, GUEST, HOST, { lang: 'vi' });
+    expect(guestModel.findOneAndUpdate.mock.calls[1][1]).toEqual({ $unset: { lang: 1 } });
+    expect(await validate(plainToInstance(UpdateGuestDTO, { lang: 'fr' }))).toHaveLength(1);
+    expect(await validate(plainToInstance(UpdateGuestDTO, { lang: 'en' }))).toHaveLength(0);
   });
 
   it('marks and unmarks a reminder', async () => {

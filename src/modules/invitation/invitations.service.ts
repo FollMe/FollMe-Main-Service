@@ -35,18 +35,18 @@ const templateStr = fs.readFileSync(path.resolve(process.cwd(), 'src/templates/s
 const template = Handlebars.compile(templateStr);
 
 // Fields of an event that guests may see (no host id, no counters).
-const PUBLIC_EVENT_FIELDS = '_id title location mapLocation startAt rsvpBy type theme groomName brideName message allowPublicLink music scratchDate gifts photos program story';
+const PUBLIC_EVENT_FIELDS = '_id title location mapLocation startAt rsvpBy type theme groomName brideName message messageEn allowPublicLink music scratchDate gifts photos program story';
 // Fields of a guest the host sees.
-const HOST_GUEST_FIELDS = '_id name mail viewed source rsvp sentAt remindedAt dayOfAt thankedAt group table arrivedAt arrivedCount arrivedBySelf gift giftClaim';
+const HOST_GUEST_FIELDS = '_id name mail viewed source rsvp sentAt remindedAt dayOfAt thankedAt group table arrivedAt arrivedCount arrivedBySelf gift giftClaim lang';
 // Fields of a guest the reception desk sees: who is expected, who came.
 const DESK_GUEST_FIELDS = '_id name group table source rsvp.status rsvp.count rsvp.vegetarian arrivedAt arrivedCount arrivedBySelf';
 // What a copy of an event takes from it (for another ceremony of the same wedding)
-const DUPLICATED_FIELDS = 'title location mapLocation startAt type theme groomName brideName message allowPublicLink '
+const DUPLICATED_FIELDS = 'title location mapLocation startAt type theme groomName brideName message messageEn allowPublicLink '
   + 'music scratchDate seatsPerTable gifts program story photos';
 // Fields the host can set, picked explicitly from request bodies.
 const EDITABLE_FIELDS = [
   'title', 'location', 'mapLocation', 'startAt', 'type', 'theme',
-  'groomName', 'brideName', 'message', 'allowPublicLink', 'music', 'scratchDate', 'gifts', 'seatsPerTable', 'rsvpBy',
+  'groomName', 'brideName', 'message', 'messageEn', 'allowPublicLink', 'music', 'scratchDate', 'gifts', 'seatsPerTable', 'rsvpBy',
   'program', 'story', 'budget',
 ] as const;
 
@@ -248,7 +248,7 @@ export class InvitationsService {
 
     // Their table too: the card shows it on the day
     const guest: any = await this.guestModel.findOne({ isDeleted: { $ne: true }, _id: guestId })
-      .select('_id name event rsvp table giftClaim arrivedAt arrivedCount')
+      .select('_id name event rsvp table giftClaim arrivedAt arrivedCount lang')
       .populate('event', `${PUBLIC_EVENT_FIELDS} host cohosts isDeleted +guestPhotos`);
     const event = guest?.event;
     if (!guest || !event || event.isDeleted) {
@@ -629,6 +629,11 @@ export class InvitationsService {
         unset.gift = 1;
       }
     }
+    if (body.lang === 'en') {
+      set.lang = 'en';
+    } else if (body.lang === 'vi') {
+      unset.lang = 1;
+    }
     if (!Object.keys(set).length && !Object.keys(unset).length) {
       throw new BadRequestException('Không có gì để cập nhật');
     }
@@ -1002,10 +1007,11 @@ export class InvitationsService {
     if (body.copyGuests) {
       const invited = await this.guestModel.find({
         event: eventId, isDeleted: { $ne: true }, $or: [{ source: 'host' }, { source: { $exists: false } }],
-      }).sort({ _id: 1 }).select('name mail group');
+      }).sort({ _id: 1 }).select('name mail group lang');
       if (invited.length) {
+        // Guests reading English keep their English card
         await this.guestModel.insertMany(invited.map((g: any) => ({
-          event: event._id, name: g.name, mail: g.mail, group: g.group, source: 'host',
+          event: event._id, name: g.name, mail: g.mail, group: g.group, source: 'host', ...(g.lang ? { lang: g.lang } : {}),
         })));
       }
       guests = invited.length;

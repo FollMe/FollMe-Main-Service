@@ -47,6 +47,7 @@ export class Guest {
   table?: string;
   gift?: ReceivedGift;
   giftClaim?: GiftClaim;
+  lang?: string;
 }
 
 const RsvpSchema = new Schema({
@@ -105,6 +106,8 @@ export const GuestSchema = new Schema({
   gift: { type: ReceivedGiftSchema, default: undefined },
   // Set by the guest on their card: "I sent a gift" (bank transfer)
   giftClaim: { type: GiftClaimSchema, default: undefined },
+  // 'en': their card opens in English (foreign friends, family abroad); unset for Vietnamese
+  lang: { type: String, enum: ['en'] },
 }, { timestamps: true });
 
 // The host's list and every count of an event's guests

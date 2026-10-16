@@ -1,5 +1,5 @@
 import { Type } from "class-transformer";
-import { IsNotEmpty, IsArray, ArrayMaxSize, IsOptional, IsDateString, IsIn, MaxLength, IsBoolean, ValidateNested, IsInt, Min, Max } from "class-validator";
+import { IsNotEmpty, IsArray, IsString, ArrayMaxSize, IsOptional, IsDateString, IsIn, MaxLength, IsBoolean, ValidateNested, IsInt, Min, Max } from "class-validator";
 import { GuestDTO } from "./guest.dto";
 import { GiftDTO } from "./gift.dto";
 import { ProgramItemDTO } from "./program.dto";
@@ -45,6 +45,12 @@ export class UpdateInvitationDTO {
   @IsOptional()
   @MaxLength(1000)
   message?: string;
+
+  /** The message in English, for guests reading the card in English. */
+  @IsOptional()
+  @IsString()
+  @MaxLength(1000)
+  messageEn?: string;
 
   @IsOptional()
   @IsBoolean()
