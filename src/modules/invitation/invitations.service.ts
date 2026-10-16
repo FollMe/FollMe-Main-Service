@@ -37,19 +37,19 @@ const templateStr = fs.readFileSync(path.resolve(process.cwd(), 'src/templates/s
 const template = Handlebars.compile(templateStr);
 
 // Fields of an event that guests may see (no host id, no counters).
-const PUBLIC_EVENT_FIELDS = '_id title location mapLocation startAt rsvpBy type theme groomName brideName message messageEn allowPublicLink music scratchDate gifts photos program story shuttles notes';
+const PUBLIC_EVENT_FIELDS = '_id title location mapLocation startAt rsvpBy type theme groomName brideName message messageEn allowPublicLink music scratchDate gifts photos program story shuttles notes menu';
 // Fields of a guest the host sees.
 const HOST_GUEST_FIELDS = '_id name mail viewed source rsvp sentAt remindedAt dayOfAt thankedAt group table arrivedAt arrivedCount arrivedBySelf gift giftClaim lang';
 // Fields of a guest the reception desk sees: who is expected, who came.
 const DESK_GUEST_FIELDS = '_id name group table source rsvp.status rsvp.count rsvp.vegetarian rsvp.shuttle arrivedAt arrivedCount arrivedBySelf';
 // What a copy of an event takes from it (for another ceremony of the same wedding)
 const DUPLICATED_FIELDS = 'title location mapLocation startAt type theme groomName brideName message messageEn allowPublicLink '
-  + 'music scratchDate seatsPerTable gifts program story shuttles notes photos';
+  + 'music scratchDate seatsPerTable gifts program story shuttles notes menu photos';
 // Fields the host can set, picked explicitly from request bodies.
 const EDITABLE_FIELDS = [
   'title', 'location', 'mapLocation', 'startAt', 'type', 'theme',
   'groomName', 'brideName', 'message', 'messageEn', 'allowPublicLink', 'music', 'scratchDate', 'gifts', 'seatsPerTable', 'rsvpBy',
-  'program', 'story', 'shuttles', 'notes', 'budget',
+  'program', 'story', 'shuttles', 'notes', 'menu', 'budget',
 ] as const;
 
 function pickEditable(body: CreateInvitationDTO | UpdateInvitationDTO) {
@@ -75,6 +75,10 @@ function pickEditable(body: CreateInvitationDTO | UpdateInvitationDTO) {
     } else if (key === 'notes') {
       if (Array.isArray(value)) {
         out.notes = tidyNotes(value as NoteDTO[]);
+      }
+    } else if (key === 'menu') {
+      if (Array.isArray(value)) {
+        out.menu = tidyMenu(value as string[]);
       }
     } else if (value !== undefined) {
       out[key] = typeof value === 'string' ? value.trim() : value;
@@ -102,6 +106,11 @@ export function tidyStory(items: StoryItemDTO[]) {
     }))
     .filter(item => item.title)
     .map(({ when, title, text }) => ({ ...(when ? { when } : {}), title, ...(text ? { text } : {}) }));
+}
+
+/** The menu in serving order: one line per dish, no empty ones. */
+export function tidyMenu(items: string[]) {
+  return items.map(item => item.replace(/\s+/g, ' ').trim()).filter(Boolean);
 }
 
 /**

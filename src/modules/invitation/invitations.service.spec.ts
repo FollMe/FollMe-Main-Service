@@ -1,7 +1,7 @@
 import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { plainToInstance } from 'class-transformer';
 import { validate } from 'class-validator';
-import { InvitationsService, foldName, ogImage, owned, shownGuestPhotos, summarize, tidyExpense, tidyNotes, tidyProgram, tidyShuttles, tidyStory, tidyTask } from './invitations.service';
+import { InvitationsService, foldName, ogImage, owned, shownGuestPhotos, summarize, tidyExpense, tidyMenu, tidyNotes, tidyProgram, tidyShuttles, tidyStory, tidyTask } from './invitations.service';
 import { PublicRsvpDTO, RsvpDTO } from './dtos/rsvp.dto';
 import { CreateInvitationDTO } from './dtos/createInvitation.dto';
 import { UpdateInvitationDTO } from './dtos/updateInvitation.dto';
@@ -1605,5 +1605,24 @@ describe('short link (slug)', () => {
     for (const slug of ['ml', 'Minh-Lan', 'minh lan', '-minh', 'minh-', 'minh--lan', 'mình-lan', 'x'.repeat(41)]) {
       expect(await bad(slug)).toBe(true);
     }
+  });
+});
+
+describe('menu (thực đơn)', () => {
+  it('keeps the dishes in order, one line each', async () => {
+    expect(tidyMenu(['  Gỏi ngó sen   tôm thịt ', '', ' ', 'Lẩu\nhải sản'])).toEqual(['Gỏi ngó sen tôm thịt', 'Lẩu hải sản']);
+    const { service, eventModel } = setup();
+    await service.update(EVENT, HOST, { menu: ['Súp cua', ' '] } as any, 'h@x.vn');
+    expect(eventModel.findOneAndUpdate.mock.calls[0][1].$set.menu).toEqual(['Súp cua']);
+  });
+
+  it('validates it', async () => {
+    const props = async body => (await validate(plainToInstance(CreateInvitationDTO, {
+      title: 'T', location: 'L', startAt: '2027-01-01T00:00:00Z', ...body,
+    }))).map(e => e.property);
+    expect(await props({ menu: ['Súp cua gà xé'] })).toEqual([]);
+    expect(await props({ menu: ['x'.repeat(81)] })).toEqual(['menu']);
+    expect(await props({ menu: [5] })).toEqual(['menu']);
+    expect(await props({ menu: Array(16).fill('Món') })).toEqual(['menu']);
   });
 });

@@ -31,6 +31,7 @@ export class Event {
   story?: StoryItem[];
   shuttles?: Shuttle[];
   notes?: Note[];
+  menu?: string[];
   budget?: number;
   expenses?: Expense[];
   checklist?: Task[];
@@ -219,6 +220,8 @@ export const EventSchema = new Schema({
   story: { type: [StoryItemSchema], default: undefined },
   shuttles: { type: [ShuttleSchema], default: undefined },
   notes: { type: [NoteSchema], default: undefined },
+  // The party's menu (thực đơn), dishes in serving order
+  menu: { type: [String], default: undefined },
   // The host's budget (thu chi): a planned total and each expense. Only the
   // host's own view of the event asks for the expenses.
   budget: { type: Number },
