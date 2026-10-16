@@ -16,6 +16,7 @@ import { ArrivalDTO, WalkInDTO } from './dtos/desk.dto';
 import { GiftGiverDTO } from './dtos/receivedGift.dto';
 import { SeatingDTO } from './dtos/seating.dto';
 import { ExpenseDTO, UpdateExpenseDTO } from './dtos/expense.dto';
+import { ChecklistDTO, UpdateTaskDTO } from './dtos/task.dto';
 import { MAX_PHOTO_BYTES } from './invitation.constants';
 
 const photoPipe = new ParseFilePipe({
@@ -147,6 +148,26 @@ export class invitationsController {
   @UseGuards(AuthGuard("jwt"))
   async removeExpense(@Request() req, @Param('id') id: string, @Param('expenseId') expenseId: string) {
     return await this.invitationsService.removeExpense(id, expenseId, req.user._id);
+  }
+
+  // ---------- Checklist (việc cần làm) ----------
+
+  @Post('events/:id/checklist')
+  @UseGuards(AuthGuard("jwt"))
+  async addTasks(@Request() req, @Param('id') id: string, @Body() body: ChecklistDTO) {
+    return await this.invitationsService.addTasks(id, req.user._id, body.items);
+  }
+
+  @Put('events/:id/checklist/:taskId')
+  @UseGuards(AuthGuard("jwt"))
+  async updateTask(@Request() req, @Param('id') id: string, @Param('taskId') taskId: string, @Body() body: UpdateTaskDTO) {
+    return await this.invitationsService.updateTask(id, taskId, req.user._id, body);
+  }
+
+  @Delete('events/:id/checklist/:taskId')
+  @UseGuards(AuthGuard("jwt"))
+  async removeTask(@Request() req, @Param('id') id: string, @Param('taskId') taskId: string) {
+    return await this.invitationsService.removeTask(id, taskId, req.user._id);
   }
 
   @Post('events/:id/photos')

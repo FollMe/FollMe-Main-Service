@@ -1,5 +1,5 @@
 import { Schema } from 'mongoose';
-import { EVENT_MUSIC, EVENT_THEMES, EVENT_TYPES, EXPENSE_CATEGORIES, GIFT_SIDES, PURGE_AFTER_SECONDS } from '../invitation.constants';
+import { EVENT_MUSIC, EVENT_THEMES, EVENT_TYPES, EXPENSE_CATEGORIES, GIFT_SIDES, PURGE_AFTER_SECONDS, TASK_LINKS } from '../invitation.constants';
 
 export class Event {
   title: string;
@@ -24,6 +24,7 @@ export class Event {
   program?: ProgramItem[];
   budget?: number;
   expenses?: Expense[];
+  checklist?: Task[];
   photos?: Photo[];
   screenKey?: string;
   deskKey?: string;
@@ -55,6 +56,16 @@ export class Expense {
   note?: string;
 }
 
+/** A thing to do for the event, from the host's checklist. */
+export class Task {
+  _id?: unknown;
+  label: string;
+  due?: Date;
+  done?: boolean;
+  doneAt?: Date;
+  link?: string;
+}
+
 export class Gift {
   side: string;
   bankBin: string;
@@ -82,6 +93,15 @@ const ExpenseSchema = new Schema({
   paid: { type: Number },
   note: { type: String },
 }, { timestamps: true });
+
+const TaskSchema = new Schema({
+  label: { type: String, required: true },
+  due: { type: Date },
+  done: { type: Boolean, default: false },
+  doneAt: { type: Date },
+  // The tool that does it ('seating', 'send'...), shown as a shortcut
+  link: { type: String, enum: TASK_LINKS },
+});
 
 const PhotoSchema = new Schema({
   url: { type: String, required: true },
@@ -123,6 +143,8 @@ export const EventSchema = new Schema({
   // host's own view of the event asks for the expenses.
   budget: { type: Number },
   expenses: { type: [ExpenseSchema], default: undefined, select: false },
+  // The host's checklist (việc cần làm); only their own view asks for it
+  checklist: { type: [TaskSchema], default: undefined, select: false },
   photos: { type: [PhotoSchema], default: undefined },
   // Secret part of the venue screen link (shown on a TV at the party, run
   // by whoever the host sends the link to). Never sent to guests.

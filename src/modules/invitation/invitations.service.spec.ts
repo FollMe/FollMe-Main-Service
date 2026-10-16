@@ -1,7 +1,7 @@
 import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { plainToInstance } from 'class-transformer';
 import { validate } from 'class-validator';
-import { InvitationsService, ogImage, summarize, tidyExpense, tidyProgram } from './invitations.service';
+import { InvitationsService, ogImage, summarize, tidyExpense, tidyProgram, tidyTask } from './invitations.service';
 import { PublicRsvpDTO } from './dtos/rsvp.dto';
 import { CreateInvitationDTO } from './dtos/createInvitation.dto';
 import { UpdateInvitationDTO } from './dtos/updateInvitation.dto';
@@ -11,6 +11,7 @@ import { ArrivalDTO, WalkInDTO } from './dtos/desk.dto';
 import { GiftGiverDTO } from './dtos/receivedGift.dto';
 import { SeatingDTO } from './dtos/seating.dto';
 import { ExpenseDTO, UpdateExpenseDTO } from './dtos/expense.dto';
+import { ChecklistDTO, UpdateTaskDTO } from './dtos/task.dto';
 
 jest.mock('src/sharedServices/mailer.service', () => ({ MailerService: class {} }));
 
@@ -707,6 +708,80 @@ describe('budget', () => {
     expect(await update({ amount: null, paid: null, note: null })).toEqual([]);
     expect(await update({ note: 'x'.repeat(101) })).toEqual(['note']);
     expect(tidyExpense({ label: ' a  b ', note: '  ' })).toEqual({ label: 'a b', category: undefined, amount: undefined, paid: undefined, note: undefined });
+  });
+});
+
+describe('checklist', () => {
+  const TASK = '64b0000000000000000000d1';
+
+  it('adds tasks at the end, within the limit, unticked', async () => {
+    const { service, eventModel } = setup();
+    const added: any[] = await service.addTasks(EVENT, HOST, [
+      { label: ' Đặt   nhà hàng ', due: '2026-07-16T05:00:00.000Z', link: 'budget' },
+      { label: '   ' },
+      { label: 'Gửi thiệp', extra: 1 } as any,
+    ]);
+    expect(added.map(t => [t.label, t.done])).toEqual([['Đặt nhà hàng', false], ['Gửi thiệp', false]]);
+    expect(added[0].due).toEqual(new Date('2026-07-16T05:00:00.000Z'));
+    expect(added[1].extra).toBeUndefined();
+    const [filter, update] = eventModel.updateOne.mock.calls[0];
+    expect(filter).toMatchObject({ _id: EVENT, host: HOST });
+    expect(JSON.stringify(filter.$expr)).toContain('60');
+    expect(update.$push.checklist.$each).toHaveLength(2);
+  });
+
+  it('refuses a full list, someone else\'s event and only blanks', async () => {
+    const { service, eventModel } = setup();
+    await expect(service.addTasks(EVENT, HOST, [{ label: ' ' }])).rejects.toBeInstanceOf(BadRequestException);
+    eventModel.updateOne = jest.fn(async () => ({ matchedCount: 0, modifiedCount: 0 }));
+    await expect(service.addTasks(EVENT, HOST, [{ label: 'x' }])).rejects.toBeInstanceOf(BadRequestException);
+    eventModel.findOne = jest.fn(() => query(null));
+    await expect(service.addTasks(EVENT, 'someone', [{ label: 'x' }])).rejects.toBeInstanceOf(NotFoundException);
+  });
+
+  it('ticks with the time, unticks, re-dates and renames', async () => {
+    const { service, eventModel } = setup();
+    eventModel.findOneAndUpdate = jest.fn(() => query({ checklist: [{ _id: TASK, label: 'Xếp bàn', done: true }] }));
+    expect(await service.updateTask(EVENT, TASK, HOST, { done: true })).toMatchObject({ _id: TASK, done: true });
+    let update = eventModel.findOneAndUpdate.mock.calls[0][1];
+    expect(update.$set['checklist.$.done']).toBe(true);
+    expect(update.$set['checklist.$.doneAt']).toBeInstanceOf(Date);
+    await service.updateTask(EVENT, TASK, HOST, { done: false, due: null, label: ' Xếp  bàn ' });
+    update = eventModel.findOneAndUpdate.mock.calls[1][1];
+    expect(update.$set).toEqual({ 'checklist.$.done': false, 'checklist.$.label': 'Xếp bàn' });
+    expect(update.$unset).toEqual({ 'checklist.$.doneAt': '', 'checklist.$.due': '' });
+    expect(eventModel.findOneAndUpdate.mock.calls[1][0]).toMatchObject({ host: HOST, 'checklist._id': TASK });
+  });
+
+  it('refuses empty changes and blank labels; 404s elsewhere', async () => {
+    const { service, eventModel } = setup();
+    await expect(service.updateTask(EVENT, TASK, HOST, {})).rejects.toBeInstanceOf(BadRequestException);
+    await expect(service.updateTask(EVENT, TASK, HOST, { label: '  ' })).rejects.toBeInstanceOf(BadRequestException);
+    eventModel.findOneAndUpdate = jest.fn(() => query(null));
+    await expect(service.updateTask(EVENT, TASK, 'someone', { done: true })).rejects.toBeInstanceOf(NotFoundException);
+    eventModel.updateOne = jest.fn(async () => ({ matchedCount: 0, modifiedCount: 0 }));
+    await expect(service.removeTask(EVENT, TASK, 'someone')).rejects.toBeInstanceOf(NotFoundException);
+  });
+
+  it('only the host view asks for it', async () => {
+    const { service, eventModel } = setup();
+    eventModel.findOne = jest.fn(() => query(null));
+    await service.findOne(EVENT, HOST).catch(() => null);
+    expect(eventModel.findOne.mock.results[0].value.select.mock.calls[0][0]).toContain('+checklist');
+  });
+
+  it('validates tasks', async () => {
+    const props = async items => (await validate(plainToInstance(ChecklistDTO, { items })))
+      .map(e => e.property);
+    expect(await props([{ label: 'Đặt nhà hàng', due: '2026-07-16T05:00:00.000Z', link: 'seating' }])).toEqual([]);
+    expect(await props([])).toEqual(['items']);
+    expect(await props([{ label: 'x', link: 'nowhere' }])).toEqual(['items']);
+    expect(await props([{ label: 'x'.repeat(81) }])).toEqual(['items']);
+    expect(await props(Array.from({ length: 61 }, () => ({ label: 'x' })))).toEqual(['items']);
+    const update = async body => (await validate(plainToInstance(UpdateTaskDTO, body))).map(e => e.property);
+    expect(await update({ due: null, done: false })).toEqual([]);
+    expect(await update({ done: 'yes' })).toEqual(['done']);
+    expect(tidyTask({ label: ' a ' })).toEqual({ label: 'a' });
   });
 });
 
