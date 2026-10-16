@@ -1,7 +1,7 @@
 import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { plainToInstance } from 'class-transformer';
 import { validate } from 'class-validator';
-import { InvitationsService, foldName, ogImage, owned, summarize, tidyExpense, tidyProgram, tidyTask } from './invitations.service';
+import { InvitationsService, foldName, ogImage, owned, shownGuestPhotos, summarize, tidyExpense, tidyProgram, tidyTask } from './invitations.service';
 import { PublicRsvpDTO, RsvpDTO } from './dtos/rsvp.dto';
 import { CreateInvitationDTO } from './dtos/createInvitation.dto';
 import { UpdateInvitationDTO } from './dtos/updateInvitation.dto';
@@ -1156,7 +1156,7 @@ describe('remove', () => {
     expect(await service.remove(EVENT, HOST)).toEqual({ _id: EVENT });
     const [filter, update] = eventModel.findOneAndUpdate.mock.calls[0];
     expect(filter).toEqual({ _id: EVENT, host: HOST, isDeleted: { $ne: true } });
-    expect(update.$unset).toEqual({ photos: 1, screenKey: 1, deskKey: 1, cohostKey: 1 });
+    expect(update.$unset).toEqual({ photos: 1, guestPhotos: 1, screenKey: 1, deskKey: 1, cohostKey: 1 });
     const { deletedAt } = update.$set;
     expect(update.$set).toEqual({ isDeleted: true, deletedAt: expect.any(Date) });
     // Guests and wishes are purged with it
@@ -1184,7 +1184,7 @@ describe('findPublic', () => {
     const { service, eventModel } = setup({ event: event() as any });
     const res: any = await service.findPublic(EVENT);
     expect(eventModel.updateOne).toHaveBeenCalledWith({ _id: EVENT }, { $inc: { publicViews: 1 } }, { timestamps: false });
-    expect(res.event).toEqual({ _id: EVENT, title: 'Cưới' });
+    expect(res.event).toEqual({ _id: EVENT, title: 'Cưới', guestPhotos: [] });
   });
 
   it('does not count the host opening their own public link', async () => {
@@ -1213,7 +1213,7 @@ describe('findGuest', () => {
     const res: any = await service.findGuest(GUEST);
     expect(guestModel.updateOne).toHaveBeenCalledWith({ _id: GUEST }, { $inc: { viewed: 1 } });
     expect(res.name).toBe('Cô Ba');
-    expect(res.event).toEqual({ _id: EVENT, title: 'Cưới' });
+    expect(res.event).toEqual({ _id: EVENT, title: 'Cưới', guestPhotos: [] });
   });
 
   it('does not count the host opening their guest\'s card', async () => {
@@ -1274,5 +1274,76 @@ describe('finding a seat on the shared link', () => {
     expect(guestModel.find).not.toHaveBeenCalled();
     guestModel.exists = jest.fn(async () => null);
     expect((await service.findSeat(EVENT, '', at(1))).hasTables).toBe(false);
+  });
+});
+
+describe('photos guests took at the party', () => {
+  const file = { buffer: Buffer.from('x'), mimetype: 'image/jpeg' } as any;
+  const start = new Date('2026-12-12T04:00:00Z');
+  const at = (hours: number) => start.getTime() + hours * 3600_000;
+  const OTHER_GUEST = '64b0000000000000000000c2';
+  const make = (guestPhotos: any[] = []) => {
+    const ctx = setup({ event: { _id: EVENT, startAt: start, guestPhotos } as any });
+    ctx.guestModel.findOne = jest.fn(() => query({ _id: GUEST, name: 'Cô Ba', event: EVENT }));
+    return ctx;
+  };
+
+  it('takes a photo on the day, with who sent it', async () => {
+    const { service, eventModel, cloudinary } = make();
+    const photo = await service.addGuestPhoto(GUEST, file, at(3));
+    expect(cloudinary.uploadImage).toHaveBeenCalledWith(file, `FollMe/events/${EVENT}/guests`);
+    expect(photo).toMatchObject({ name: 'Cô Ba', mine: true, width: 1600 });
+    expect((photo as any).publicId).toBeUndefined();
+    const [filter, update] = eventModel.updateOne.mock.calls[0];
+    expect(filter).toMatchObject({ _id: EVENT, 'guestPhotos.199': { $exists: false } });
+    expect(update.$push.guestPhotos).toMatchObject({ guest: GUEST, name: 'Cô Ba', publicId: 'FollMe/events/e1/a' });
+  });
+
+  it('only from a little before the party to a month after', async () => {
+    const { service, cloudinary } = make();
+    await expect(service.addGuestPhoto(GUEST, file, at(-3))).rejects.toBeInstanceOf(BadRequestException);
+    await expect(service.addGuestPhoto(GUEST, file, at(31 * 24))).rejects.toBeInstanceOf(BadRequestException);
+    expect(cloudinary.uploadImage).not.toHaveBeenCalled();
+    await service.addGuestPhoto(GUEST, file, at(-1));
+    expect(cloudinary.uploadImage).toHaveBeenCalledTimes(1);
+  });
+
+  it('a few per guest', async () => {
+    const mine = Array.from({ length: 10 }, (_, i) => ({ _id: `p${i}`, guest: GUEST }));
+    const { service, cloudinary } = make(mine);
+    await expect(service.addGuestPhoto(GUEST, file, at(3))).rejects.toThrow('Mỗi khách gửi tối đa 10 ảnh');
+    expect(cloudinary.uploadImage).not.toHaveBeenCalled();
+  });
+
+  it('cards show the visible ones, newest first, the viewer\'s own marked', () => {
+    const photos = [
+      { _id: 'a', url: 'u1', guest: GUEST, name: 'Cô Ba', at: '2026-12-12T05:00:00Z', publicId: 'x' },
+      { _id: 'b', url: 'u2', guest: OTHER_GUEST, name: 'Chú Tư', at: '2026-12-12T06:00:00Z', hidden: true },
+      { _id: 'c', url: 'u3', guest: OTHER_GUEST, name: 'Chú Tư', at: '2026-12-12T07:00:00Z' },
+    ];
+    const shown = shownGuestPhotos(photos, GUEST);
+    expect(shown.map(p => p._id)).toEqual(['c', 'a']);
+    expect(shown[1]).toEqual({ _id: 'a', url: 'u1', width: undefined, height: undefined, name: 'Cô Ba', at: '2026-12-12T05:00:00Z', mine: true });
+    expect(shownGuestPhotos(photos).every(p => !('mine' in p))).toBe(true);
+  });
+
+  it('a guest removes only their own; the host hides or deletes any', async () => {
+    const { service, eventModel, cloudinary } = make();
+    const PHOTO = '64b0000000000000000000a1';
+    eventModel.findOneAndUpdate = jest.fn(() => query({ guestPhotos: [{ _id: PHOTO, publicId: 'FollMe/events/e1/guests/a' }] }));
+    await service.removeGuestPhoto(GUEST, PHOTO);
+    expect(eventModel.findOneAndUpdate.mock.calls[0][0]).toMatchObject({
+      _id: EVENT, guestPhotos: { $elemMatch: { _id: '64b0000000000000000000a1', guest: GUEST } },
+    });
+    await service.deleteGuestPhoto(EVENT, '64b0000000000000000000a1', HOST);
+    expect(eventModel.findOneAndUpdate.mock.calls[1][0]).toMatchObject({ $or: [{ host: HOST }, { cohosts: HOST }] });
+    expect(eventModel.findOneAndUpdate.mock.calls[1][0].guestPhotos.$elemMatch.guest).toBeUndefined();
+    eventModel.updateOne = jest.fn(async () => ({ matchedCount: 1 }));
+    await service.hideGuestPhoto(EVENT, '64b0000000000000000000a1', HOST, true);
+    expect(eventModel.updateOne.mock.calls[0][1]).toEqual({ $set: { 'guestPhotos.$.hidden': true } });
+    await service.hideGuestPhoto(EVENT, '64b0000000000000000000a1', HOST, false);
+    expect(eventModel.updateOne.mock.calls[1][1]).toEqual({ $unset: { 'guestPhotos.$.hidden': 1 } });
+    eventModel.findOneAndUpdate = jest.fn(() => query(null));
+    await expect(service.removeGuestPhoto(GUEST, PHOTO)).rejects.toBeInstanceOf(NotFoundException);
   });
 });

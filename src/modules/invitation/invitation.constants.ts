@@ -9,6 +9,11 @@ export const EVENT_MUSIC = ['none', 'canon'] as const;
 export const GIFT_SIDES = ['groom', 'bride', 'host'] as const;
 export const MAX_GIFT_ACCOUNTS = 2;
 export const MAX_PHOTOS = 12;
+// Photos guests took at the party, shared on everyone's card
+export const MAX_GUEST_PHOTOS = 200;
+export const MAX_GUEST_PHOTOS_EACH = 10;
+export const GUEST_PHOTOS_BEFORE_MS = 2 * 3600_000;
+export const GUEST_PHOTOS_AFTER_MS = 30 * 24 * 3600_000;
 export const MAX_PHOTO_BYTES = 6 * 1024 * 1024;
 export const MAX_GROUP_NAME = 40;
 // The gift ledger (sổ mừng): amounts in VND

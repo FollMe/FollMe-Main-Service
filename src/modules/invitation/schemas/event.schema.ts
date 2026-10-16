@@ -117,6 +117,18 @@ const PhotoSchema = new Schema({
   height: { type: Number },
 });
 
+// A photo a guest took at the party: who sent it, and whether the host hid it
+const GuestPhotoSchema = new Schema({
+  url: { type: String, required: true },
+  publicId: { type: String, required: true },
+  width: { type: Number },
+  height: { type: Number },
+  guest: { type: Schema.Types.ObjectId, ref: 'Guest', required: true },
+  name: { type: String },
+  hidden: { type: Boolean },
+  at: { type: Date, required: true },
+});
+
 export const EventSchema = new Schema({
   title: { type: String, require: true },
   location: { type: String, require: true },
@@ -158,6 +170,8 @@ export const EventSchema = new Schema({
   // The host's checklist (việc cần làm); only their own view asks for it
   checklist: { type: [TaskSchema], default: undefined, select: false },
   photos: { type: [PhotoSchema], default: undefined },
+  // Guests' photos from the party; read only by the views that show them
+  guestPhotos: { type: [GuestPhotoSchema], default: undefined, select: false },
   // Secret part of the venue screen link (shown on a TV at the party, run
   // by whoever the host sends the link to). Never sent to guests.
   screenKey: { type: String, select: false },

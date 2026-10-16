@@ -25,8 +25,8 @@ import { ArrivalDTO, WalkInDTO } from './dtos/desk.dto';
 import { GiftClaimDTO, GiftGiverDTO, ReceivedGiftDTO } from './dtos/receivedGift.dto';
 import { SeatDTO } from './dtos/seating.dto';
 import {
-  MAX_COHOSTS, MAX_EXPENSES, MAX_PHOTOS, MAX_TASKS, MAX_WISHES_SHOWN, SEAT_FINDER_AFTER_MS, SEAT_FINDER_BEFORE_MS,
-  SEAT_FINDER_RESULTS, TASK_LINKS,
+  GUEST_PHOTOS_AFTER_MS, GUEST_PHOTOS_BEFORE_MS, MAX_COHOSTS, MAX_EXPENSES, MAX_GUEST_PHOTOS, MAX_GUEST_PHOTOS_EACH,
+  MAX_PHOTOS, MAX_TASKS, MAX_WISHES_SHOWN, SEAT_FINDER_AFTER_MS, SEAT_FINDER_BEFORE_MS, SEAT_FINDER_RESULTS, TASK_LINKS,
 } from './invitation.constants';
 
 const templateStr = fs.readFileSync(path.resolve(process.cwd(), 'src/templates/sendInvitation.template.hbs')).toString('utf8')
@@ -134,6 +134,25 @@ export function foldName(text: string) {
     .toLowerCase().replace(/[^a-z0-9 ]+/g, ' ').replace(/\s+/g, ' ').trim();
 }
 
+/**
+ * Guests' photos as cards show them: not the hidden ones, newest first, with
+ * who sent each; `mine` marks the viewing guest's own (they may remove them).
+ */
+export function shownGuestPhotos(photos: any[] = [], viewerGuestId?: unknown) {
+  return (photos ?? [])
+    .filter(p => !p.hidden)
+    .sort((a, b) => new Date(b.at).getTime() - new Date(a.at).getTime())
+    .map(p => ({
+      _id: p._id,
+      url: p.url,
+      width: p.width,
+      height: p.height,
+      name: p.name,
+      at: p.at,
+      ...(viewerGuestId && String(p.guest) === String(viewerGuestId) ? { mine: true } : {}),
+    }));
+}
+
 function assertObjectId(id: string) {
   if (!mongoose.isValidObjectId(id)) {
     throw new HttpException("Không tìm thấy tài nguyên!", HttpStatus.BAD_REQUEST);
@@ -172,7 +191,7 @@ export class InvitationsService {
     assertObjectId(eventId);
 
     const invitation = await this.eventModel.findOne({ isDeleted: { $ne: true }, ...owned(userId), _id: eventId })
-      .select('-isDeleted +expenses +checklist')
+      .select('-isDeleted +expenses +checklist +guestPhotos')
       .populate('guests', HOST_GUEST_FIELDS)
       .populate('host', '_id name avatar')
       .populate('cohosts', '_id name avatar');
@@ -206,7 +225,7 @@ export class InvitationsService {
     // Their table too: the card shows it on the day
     const guest: any = await this.guestModel.findOne({ isDeleted: { $ne: true }, _id: guestId })
       .select('_id name event rsvp table giftClaim')
-      .populate('event', `${PUBLIC_EVENT_FIELDS} host cohosts isDeleted`);
+      .populate('event', `${PUBLIC_EVENT_FIELDS} host cohosts isDeleted +guestPhotos`);
     const event = guest?.event;
     if (!guest || !event || event.isDeleted) {
       throw new NotFoundException();
@@ -217,10 +236,10 @@ export class InvitationsService {
     }
 
     // Guests never see who the host is
-    const { host, cohosts, isDeleted, ...publicEvent } = event.toJSON();
+    const { host, cohosts, isDeleted, guestPhotos, ...publicEvent } = event.toJSON();
     return {
       ...guest.toJSON(),
-      event: publicEvent,
+      event: { ...publicEvent, guestPhotos: shownGuestPhotos(guestPhotos, guest._id) },
       wishes: await this.visibleWishes(event._id),
     };
   }
@@ -232,15 +251,15 @@ export class InvitationsService {
   async findPublic(eventId: string, viewerId?: string) {
     assertObjectId(eventId);
     const event: any = await this.eventModel.findOne({ _id: eventId, isDeleted: { $ne: true }, allowPublicLink: true })
-      .select(`${PUBLIC_EVENT_FIELDS} host cohosts`);
+      .select(`${PUBLIC_EVENT_FIELDS} host cohosts +guestPhotos`);
     if (!event) {
       throw new NotFoundException();
     }
     if (!managedBy(event, viewerId)) {
       await this.eventModel.updateOne({ _id: eventId }, { $inc: { publicViews: 1 } }, { timestamps: false });
     }
-    const { host, cohosts, ...publicEvent } = event.toJSON();
-    return { event: publicEvent, wishes: await this.visibleWishes(eventId) };
+    const { host, cohosts, guestPhotos, ...publicEvent } = event.toJSON();
+    return { event: { ...publicEvent, guestPhotos: shownGuestPhotos(guestPhotos) }, wishes: await this.visibleWishes(eventId) };
   }
 
   /**
@@ -318,8 +337,8 @@ export class InvitationsService {
     // The event as it was, to find its photos
     const event: any = await this.eventModel.findOneAndUpdate(
       { _id: eventId, host: userId, isDeleted: { $ne: true } },
-      { $set: { isDeleted: true, deletedAt }, $unset: { photos: 1, screenKey: 1, deskKey: 1, cohostKey: 1 } },
-    ).select('_id photos');
+      { $set: { isDeleted: true, deletedAt }, $unset: { photos: 1, guestPhotos: 1, screenKey: 1, deskKey: 1, cohostKey: 1 } },
+    ).select('_id photos +guestPhotos');
     if (!event) {
       throw new NotFoundException();
     }
@@ -327,7 +346,7 @@ export class InvitationsService {
       this.guestModel.updateMany({ event: eventId, deletedAt: { $exists: false } }, { $set: { deletedAt } }),
       this.wishModel.updateMany({ event: eventId }, { $set: { deletedAt } }),
     ]);
-    for (const photo of event.photos ?? []) {
+    for (const photo of [...(event.photos ?? []), ...(event.guestPhotos ?? [])]) {
       this.destroyPhoto(photo.publicId);
     }
     return { _id: eventId };
@@ -693,6 +712,108 @@ export class InvitationsService {
       throw new BadRequestException(`Mỗi thiệp có tối đa ${MAX_PHOTOS} ảnh`);
     }
     return photo;
+  }
+
+  // ---------- Photos guests took at the party ----------
+
+  /**
+   * A guest sends a photo they took: on everyone's card from then on, unless
+   * the host hides it. From a little before the party to a month after;
+   * a few per guest, a ceiling per event.
+   */
+  async addGuestPhoto(guestId: string, file: Express.Multer.File, now = Date.now()) {
+    assertObjectId(guestId);
+    const guest: any = await this.guestModel.findOne({ _id: guestId, isDeleted: { $ne: true } }).select('_id name event');
+    if (!guest) {
+      throw new NotFoundException();
+    }
+    const event: any = await this.eventModel.findOne({ _id: guest.event, isDeleted: { $ne: true } })
+      .select('_id startAt +guestPhotos');
+    if (!event) {
+      throw new NotFoundException();
+    }
+    const start = new Date(event.startAt).getTime();
+    if (now < start - GUEST_PHOTOS_BEFORE_MS) {
+      throw new BadRequestException('Gửi ảnh được từ ngày tiệc nhé');
+    }
+    if (now > start + GUEST_PHOTOS_AFTER_MS) {
+      throw new BadRequestException('Đã hết thời gian gửi ảnh cho tiệc này');
+    }
+    const photos = event.guestPhotos ?? [];
+    if (photos.filter(p => String(p.guest) === String(guestId)).length >= MAX_GUEST_PHOTOS_EACH) {
+      throw new BadRequestException(`Mỗi khách gửi tối đa ${MAX_GUEST_PHOTOS_EACH} ảnh`);
+    }
+    if (photos.length >= MAX_GUEST_PHOTOS) {
+      throw new BadRequestException('Album ảnh của khách đã đầy');
+    }
+    const uploaded: any = await this.cloudinaryService.uploadImage(file, `FollMe/events/${event._id}/guests`);
+    const photo = {
+      _id: new mongoose.Types.ObjectId(),
+      url: uploaded.secure_url,
+      publicId: uploaded.public_id,
+      width: uploaded.width,
+      height: uploaded.height,
+      guest: guest._id,
+      name: guest.name,
+      at: new Date(now),
+    };
+    // Re-checks the ceiling: others may be sending at the same moment
+    const res = await this.eventModel.updateOne(
+      { _id: event._id, isDeleted: { $ne: true }, [`guestPhotos.${MAX_GUEST_PHOTOS - 1}`]: { $exists: false } },
+      { $push: { guestPhotos: photo } },
+    );
+    if (!res.modifiedCount) {
+      this.destroyPhoto(photo.publicId);
+      throw new BadRequestException('Album ảnh của khách đã đầy');
+    }
+    return shownGuestPhotos([photo], guest._id)[0];
+  }
+
+  /** A guest takes back a photo they sent. */
+  async removeGuestPhoto(guestId: string, photoId: string) {
+    assertObjectId(guestId);
+    assertObjectId(photoId);
+    const guest: any = await this.guestModel.findOne({ _id: guestId, isDeleted: { $ne: true } }).select('_id event');
+    if (!guest) {
+      throw new NotFoundException();
+    }
+    return this.pullGuestPhoto({ _id: guest.event }, photoId, guestId);
+  }
+
+  /** The host hides a guest's photo from the cards (or shows it again). */
+  async hideGuestPhoto(eventId: string, photoId: string, userId: string, hidden: boolean) {
+    assertObjectId(eventId);
+    assertObjectId(photoId);
+    const res = await this.eventModel.updateOne(
+      { _id: eventId, ...owned(userId), isDeleted: { $ne: true }, 'guestPhotos._id': photoId },
+      hidden ? { $set: { 'guestPhotos.$.hidden': true } } : { $unset: { 'guestPhotos.$.hidden': 1 } },
+    );
+    if (!res.matchedCount) {
+      throw new NotFoundException();
+    }
+    return { _id: photoId, hidden };
+  }
+
+  /** The host deletes a guest's photo for good. */
+  async deleteGuestPhoto(eventId: string, photoId: string, userId: string) {
+    assertObjectId(eventId);
+    assertObjectId(photoId);
+    return this.pullGuestPhoto({ _id: eventId, ...owned(userId) }, photoId);
+  }
+
+  private async pullGuestPhoto(filter: Record<string, unknown>, photoId: string, guestId?: string) {
+    const match = guestId ? { _id: photoId, guest: guestId } : { _id: photoId };
+    // The event as it was, to find the file
+    const event: any = await this.eventModel.findOneAndUpdate(
+      { ...filter, isDeleted: { $ne: true }, guestPhotos: { $elemMatch: match } },
+      { $pull: { guestPhotos: { _id: photoId } } },
+    ).select('+guestPhotos');
+    const photo = event?.guestPhotos?.find(p => String(p._id) === String(photoId));
+    if (!photo) {
+      throw new NotFoundException();
+    }
+    this.destroyPhoto(photo.publicId);
+    return { _id: photoId };
   }
 
   async removePhoto(eventId: string, photoId: string, userId: string) {
