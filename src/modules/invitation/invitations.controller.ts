@@ -15,6 +15,7 @@ import { UpdateGuestDTO } from './dtos/updateGuest.dto';
 import { ArrivalDTO, WalkInDTO } from './dtos/desk.dto';
 import { GiftGiverDTO } from './dtos/receivedGift.dto';
 import { SeatingDTO } from './dtos/seating.dto';
+import { ExpenseDTO, UpdateExpenseDTO } from './dtos/expense.dto';
 import { MAX_PHOTO_BYTES } from './invitation.constants';
 
 const photoPipe = new ParseFilePipe({
@@ -126,6 +127,26 @@ export class invitationsController {
   @UseGuards(AuthGuard("jwt"))
   async removeGuest(@Request() req, @Param('id') id: string, @Param('guestId') guestId: string) {
     return await this.invitationsService.removeGuest(id, guestId, req.user._id);
+  }
+
+  // ---------- Budget (thu chi) ----------
+
+  @Post('events/:id/expenses')
+  @UseGuards(AuthGuard("jwt"))
+  async addExpense(@Request() req, @Param('id') id: string, @Body() body: ExpenseDTO) {
+    return await this.invitationsService.addExpense(id, req.user._id, body);
+  }
+
+  @Put('events/:id/expenses/:expenseId')
+  @UseGuards(AuthGuard("jwt"))
+  async updateExpense(@Request() req, @Param('id') id: string, @Param('expenseId') expenseId: string, @Body() body: UpdateExpenseDTO) {
+    return await this.invitationsService.updateExpense(id, expenseId, req.user._id, body);
+  }
+
+  @Delete('events/:id/expenses/:expenseId')
+  @UseGuards(AuthGuard("jwt"))
+  async removeExpense(@Request() req, @Param('id') id: string, @Param('expenseId') expenseId: string) {
+    return await this.invitationsService.removeExpense(id, expenseId, req.user._id);
   }
 
   @Post('events/:id/photos')

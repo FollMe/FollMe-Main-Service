@@ -1,5 +1,5 @@
 import { Schema } from 'mongoose';
-import { EVENT_MUSIC, EVENT_THEMES, EVENT_TYPES, GIFT_SIDES, PURGE_AFTER_SECONDS } from '../invitation.constants';
+import { EVENT_MUSIC, EVENT_THEMES, EVENT_TYPES, EXPENSE_CATEGORIES, GIFT_SIDES, PURGE_AFTER_SECONDS } from '../invitation.constants';
 
 export class Event {
   title: string;
@@ -22,6 +22,8 @@ export class Event {
   rsvpBy?: Date;
   gifts?: Gift[];
   program?: ProgramItem[];
+  budget?: number;
+  expenses?: Expense[];
   photos?: Photo[];
   screenKey?: string;
   deskKey?: string;
@@ -43,6 +45,16 @@ export class ProgramItem {
   label: string;
 }
 
+/** A line of the host's budget (VND). */
+export class Expense {
+  _id?: unknown;
+  label: string;
+  category: string;
+  amount?: number;
+  paid?: number;
+  note?: string;
+}
+
 export class Gift {
   side: string;
   bankBin: string;
@@ -61,6 +73,15 @@ const ProgramItemSchema = new Schema({
   time: { type: String, required: true },
   label: { type: String, required: true },
 }, { _id: false });
+
+const ExpenseSchema = new Schema({
+  label: { type: String, required: true },
+  category: { type: String, enum: EXPENSE_CATEGORIES, required: true },
+  // The full cost and how much of it is paid so far; unset when not known yet
+  amount: { type: Number },
+  paid: { type: Number },
+  note: { type: String },
+}, { timestamps: true });
 
 const PhotoSchema = new Schema({
   url: { type: String, required: true },
@@ -98,6 +119,10 @@ export const EventSchema = new Schema({
   gifts: { type: [GiftSchema], default: undefined },
   // In time order; unset when the host gave none
   program: { type: [ProgramItemSchema], default: undefined },
+  // The host's budget (thu chi): a planned total and each expense. Only the
+  // host's own view of the event asks for the expenses.
+  budget: { type: Number },
+  expenses: { type: [ExpenseSchema], default: undefined, select: false },
   photos: { type: [PhotoSchema], default: undefined },
   // Secret part of the venue screen link (shown on a TV at the party, run
   // by whoever the host sends the link to). Never sent to guests.

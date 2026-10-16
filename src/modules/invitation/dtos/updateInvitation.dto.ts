@@ -3,7 +3,7 @@ import { IsNotEmpty, IsArray, ArrayMaxSize, IsOptional, IsDateString, IsIn, MaxL
 import { GuestDTO } from "./guest.dto";
 import { GiftDTO } from "./gift.dto";
 import { ProgramItemDTO } from "./program.dto";
-import { EVENT_MUSIC, EVENT_THEMES, EVENT_TYPES, MAX_GIFT_ACCOUNTS, MAX_GUESTS_PER_REQUEST, MAX_PROGRAM_ITEMS, MAX_SEATS_PER_TABLE } from "../invitation.constants";
+import { EVENT_MUSIC, EVENT_THEMES, EVENT_TYPES, MAX_GIFT_ACCOUNTS, MAX_GIFT_AMOUNT, MAX_GUESTS_PER_REQUEST, MAX_PROGRAM_ITEMS, MAX_SEATS_PER_TABLE } from "../invitation.constants";
 
 /** Every field is optional; only the given ones change. */
 export class UpdateInvitationDTO {
@@ -70,6 +70,13 @@ export class UpdateInvitationDTO {
   @Min(2)
   @Max(MAX_SEATS_PER_TABLE)
   seatsPerTable?: number;
+
+  /** What the host plans to spend in all (VND); null clears it. */
+  @IsOptional()
+  @IsInt({ message: 'Số tiền không hợp lệ' })
+  @Min(0, { message: 'Số tiền không hợp lệ' })
+  @Max(MAX_GIFT_AMOUNT, { message: 'Số tiền quá lớn' })
+  budget?: number | null;
 
   /** Bank accounts for wedding gifts; an empty list removes them. */
   @IsOptional()
