@@ -24,7 +24,10 @@ import { WishDTO } from './dtos/wish.dto';
 import { ArrivalDTO, WalkInDTO } from './dtos/desk.dto';
 import { GiftClaimDTO, GiftGiverDTO, ReceivedGiftDTO } from './dtos/receivedGift.dto';
 import { SeatDTO } from './dtos/seating.dto';
-import { MAX_COHOSTS, MAX_EXPENSES, MAX_PHOTOS, MAX_TASKS, MAX_WISHES_SHOWN, TASK_LINKS } from './invitation.constants';
+import {
+  MAX_COHOSTS, MAX_EXPENSES, MAX_PHOTOS, MAX_TASKS, MAX_WISHES_SHOWN, SEAT_FINDER_AFTER_MS, SEAT_FINDER_BEFORE_MS,
+  SEAT_FINDER_RESULTS, TASK_LINKS,
+} from './invitation.constants';
 
 const templateStr = fs.readFileSync(path.resolve(process.cwd(), 'src/templates/sendInvitation.template.hbs')).toString('utf8')
 const template = Handlebars.compile(templateStr);
@@ -122,6 +125,12 @@ function cleanGift(gift?: ReceivedGiftDTO | null) {
     return undefined;
   }
   return { amount, note: note || undefined, at: new Date() };
+}
+
+/** "Cô  Ba" -> "co ba": for matching what guests type, with or without accents. */
+export function foldName(text: string) {
+  return text.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/đ/g, 'd').replace(/Đ/g, 'D')
+    .toLowerCase().replace(/[^a-z0-9 ]+/g, ' ').replace(/\s+/g, ' ').trim();
 }
 
 function assertObjectId(id: string) {
@@ -461,6 +470,39 @@ export class InvitationsService {
     }
     await this.liveEvent((guest as any).event);
     return this.saveWish((guest as any).event, guest.name, body.message, (guest as any)._id);
+  }
+
+  /**
+   * "Bạn ngồi bàn nào?" on the shared link, on the day: guests type their
+   * name and see their table, as on the board at the entrance. Only name and
+   * table, a few matches, and only from a little before the party to its end.
+   */
+  async findSeat(eventId: string, query: string, now = Date.now()) {
+    assertObjectId(eventId);
+    const event = await this.liveEvent(eventId, { publicOnly: true });
+    const start = new Date(event.startAt).getTime();
+    if (now < start - SEAT_FINDER_BEFORE_MS || now > start + SEAT_FINDER_AFTER_MS) {
+      return { open: false, matches: [] };
+    }
+    const words = foldName(String(query ?? '').slice(0, 60)).split(' ').filter(Boolean);
+    if (words.join('').length < 2) {
+      return { open: true, matches: [] };
+    }
+    const guests: any[] = await this.guestModel.find({ event: eventId, isDeleted: { $ne: true } }).select('name table');
+    const wanted = words.join(' ');
+    const matches = guests
+      .map(guest => ({ guest, name: foldName(guest.name ?? '') }))
+      .filter(({ name }) => {
+        const parts = name.split(' ');
+        return words.every(word => parts.some(part => part.startsWith(word)));
+      })
+      // The exact name first, then those with a table, then by name
+      .sort((a, b) => Number(b.name === wanted) - Number(a.name === wanted)
+        || Number(Boolean(b.guest.table)) - Number(Boolean(a.guest.table))
+        || a.name.localeCompare(b.name))
+      .slice(0, SEAT_FINDER_RESULTS)
+      .map(({ guest }) => ({ name: guest.name, table: guest.table || null }));
+    return { open: true, matches };
   }
 
   async wishFromPublic(eventId: string, body: WishDTO) {

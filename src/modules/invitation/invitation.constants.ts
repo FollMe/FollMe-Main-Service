@@ -17,6 +17,10 @@ export const MAX_GIFT_NOTE = 100;
 // Seating: "12", "VIP", "Bàn 3 nhà trai"...
 export const MAX_TABLE_NAME = 20;
 export const MAX_SEATS_PER_TABLE = 30;
+// "Bạn ngồi bàn nào?" on the shared link: open from a little before the party to its end
+export const SEAT_FINDER_BEFORE_MS = 6 * 3600_000;
+export const SEAT_FINDER_AFTER_MS = 12 * 3600_000;
+export const SEAT_FINDER_RESULTS = 5;
 // The program of the day: "17:00 Đón khách", "18:00 Khai tiệc"...
 export const MAX_PROGRAM_ITEMS = 8;
 export const MAX_PROGRAM_LABEL = 60;
