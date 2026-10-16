@@ -39,6 +39,12 @@ export const MAX_STORY_ITEMS = 8;
 export const MAX_STORY_WHEN = 30;
 export const MAX_STORY_TITLE = 60;
 export const MAX_STORY_TEXT = 300;
+
+// Buses the hosts lay on for guests (xe đưa đón), e.g. from the city to a wedding in the countryside
+export const MAX_SHUTTLES = 6;
+export const MAX_SHUTTLE_LABEL = 60;
+export const MAX_SHUTTLE_FROM = 120;
+export const MAX_SHUTTLE_SEATS = 60;
 // Deleted events, guests and wishes are kept this long (to undo a mistake
 // on request), then MongoDB removes them for good.
 export const PURGE_AFTER_SECONDS = 30 * 24 * 60 * 60;

@@ -7,6 +7,7 @@ export class Rsvp {
   vegetarian?: number;
   note: string;
   song?: string;
+  shuttle?: string;
   respondedAt: Date;
 }
 
@@ -58,6 +59,8 @@ const RsvpSchema = new Schema({
   note: { type: String, default: '' },
   // A song they would like to hear at the party; unset when none
   song: { type: String },
+  // The _id of the event's bus they take (xe đưa đón); unset when they come on their own
+  shuttle: { type: String },
   respondedAt: { type: Date },
 }, { _id: false });
 

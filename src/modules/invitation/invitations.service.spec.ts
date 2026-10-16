@@ -1,7 +1,7 @@
 import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { plainToInstance } from 'class-transformer';
 import { validate } from 'class-validator';
-import { InvitationsService, foldName, ogImage, owned, shownGuestPhotos, summarize, tidyExpense, tidyProgram, tidyStory, tidyTask } from './invitations.service';
+import { InvitationsService, foldName, ogImage, owned, shownGuestPhotos, summarize, tidyExpense, tidyProgram, tidyShuttles, tidyStory, tidyTask } from './invitations.service';
 import { PublicRsvpDTO, RsvpDTO } from './dtos/rsvp.dto';
 import { CreateInvitationDTO } from './dtos/createInvitation.dto';
 import { UpdateInvitationDTO } from './dtos/updateInvitation.dto';
@@ -1444,5 +1444,95 @@ describe('the couple\'s story', () => {
     expect(await props([{ title: 'Ok', text: 'x'.repeat(300) }])).not.toContain('story');
     expect(await props([{ title: 'x'.repeat(61) }])).toContain('story');
     expect(await props(Array.from({ length: 9 }, () => ({ title: 'x' })))).toContain('story');
+  });
+});
+
+describe('shuttles (xe đưa đón)', () => {
+  const BUS = '64b0000000000000000000b1';
+  const BUS2 = '64b0000000000000000000b2';
+  const bus = { _id: BUS, label: 'Xe từ TP.HCM', time: '06:00', from: 'Ngã tư Hàng Xanh', seats: 45 };
+  const withBus = (taken: any[] = []) => {
+    const ctx = setup({ event: { _id: EVENT, startAt: new Date(Date.now() + 86400000), shuttles: [bus] } as any });
+    ctx.guestModel.aggregate = jest.fn(async () => taken);
+    return ctx;
+  };
+
+  it('tidies the buses: keeps ids, gives new ones, one line each', () => {
+    const out = tidyShuttles([
+      { _id: BUS, label: '  Xe   từ  TP.HCM ', time: '06:00', from: '  Ngã tư  Hàng Xanh ', seats: 45 },
+      { _id: BUS, label: 'Xe 2', time: '07:00', seats: 16 },
+      { label: 'Xe Biên Hoà', time: '06:30', from: ' ', seats: 29 },
+      { label: '   ', time: '08:00', seats: 4 },
+    ]);
+    expect(out.map(s => [s.label, s.time, s.from, s.seats])).toEqual([
+      ['Xe từ TP.HCM', '06:00', 'Ngã tư Hàng Xanh', 45], ['Xe 2', '07:00', undefined, 16], ['Xe Biên Hoà', '06:30', undefined, 29],
+    ]);
+    expect(String(out[0]._id)).toBe(BUS);
+    expect(String(out[1]._id)).not.toBe(BUS);
+    expect('from' in out[2]).toBe(false);
+  });
+
+  it('a guest coming takes seats on a bus with room', async () => {
+    const { service, guestModel } = withBus([{ _id: BUS, seats: 40 }]);
+    const res: any = await service.rsvpGuest(GUEST, { status: 'attending', count: 5, shuttle: BUS });
+    expect(res.rsvp.shuttle).toBe(BUS);
+    const [{ $match }] = guestModel.aggregate.mock.calls[0][0];
+    // Their own earlier answer does not count against them
+    expect(String($match._id.$ne)).toBe(GUEST);
+    expect($match['rsvp.status']).toBe('attending');
+  });
+
+  it('says how many seats are left, or that the bus is full', async () => {
+    await expect(withBus([{ _id: BUS, seats: 40 }]).service.rsvpGuest(GUEST, { status: 'attending', count: 6, shuttle: BUS }))
+      .rejects.toThrow('Xe từ TP.HCM chỉ còn 5 chỗ');
+    await expect(withBus([{ _id: BUS, seats: 45 }]).service.rsvpGuest(GUEST, { status: 'attending', count: 1, shuttle: BUS }))
+      .rejects.toThrow('Xe từ TP.HCM đã kín chỗ');
+  });
+
+  it('refuses a bus that is gone, and drops the bus for someone not coming', async () => {
+    await expect(withBus().service.rsvpGuest(GUEST, { status: 'attending', count: 1, shuttle: BUS2 }))
+      .rejects.toBeInstanceOf(BadRequestException);
+    const { service, guestModel } = withBus();
+    const res: any = await service.rsvpGuest(GUEST, { status: 'declined', shuttle: BUS });
+    expect(res.rsvp.shuttle).toBeUndefined();
+    expect((await service.rsvpGuest(GUEST, { status: 'maybe', count: 2, shuttle: BUS }) as any).rsvp.shuttle).toBeUndefined();
+    expect(guestModel.aggregate).not.toHaveBeenCalled();
+  });
+
+  it('the shared link takes a bus too', async () => {
+    const { service } = withBus();
+    const res: any = await service.rsvpPublic(EVENT, { name: 'Bạn Hùng', status: 'attending', count: 2, shuttle: BUS });
+    expect(res.rsvp.shuttle).toBe(BUS);
+  });
+
+  it('cards say how many seats each bus has taken', async () => {
+    const all = { _id: EVENT, title: 'Cưới', host: HOST, shuttles: [bus, { ...bus, _id: BUS2, label: 'Xe 2' }] };
+    const { service, guestModel } = setup({ event: { ...all, toJSON: () => ({ ...all }) } as any });
+    guestModel.aggregate = jest.fn(async () => [{ _id: BUS, seats: 12 }]);
+    const res: any = await service.findPublic(EVENT);
+    expect(res.event.shuttles.map(s => [s.label, s.taken])).toEqual([['Xe từ TP.HCM', 12], ['Xe 2', 0]]);
+  });
+
+  it('guests on a bus taken off come on their own', async () => {
+    const kept = { _id: EVENT, shuttles: [{ ...bus, _id: BUS2 }] };
+    const { service, guestModel } = setup({ event: kept as any });
+    await service.update(EVENT, HOST, { shuttles: [{ _id: BUS2, label: 'Xe từ TP.HCM', time: '06:00', seats: 45 }] } as any, 'h@x.vn');
+    expect(guestModel.updateMany).toHaveBeenCalledWith(
+      { event: EVENT, 'rsvp.shuttle': { $exists: true, $nin: [BUS2] } },
+      { $unset: { 'rsvp.shuttle': 1 } },
+    );
+  });
+
+  it('validates the buses', async () => {
+    const props = async body => (await validate(plainToInstance(CreateInvitationDTO, {
+      title: 'T', location: 'L', startAt: '2027-01-01T00:00:00Z', ...body,
+    }))).map(e => e.property);
+    const ok = { label: 'Xe từ TP.HCM', time: '06:00', seats: 45 };
+    expect(await props({ shuttles: [ok] })).toEqual([]);
+    for (const bad of [{ ...ok, time: '6h' }, { ...ok, seats: 0 }, { ...ok, seats: 61 }, { ...ok, label: '' }, { ...ok, _id: 'x' }]) {
+      expect(await props({ shuttles: [bad] })).toEqual(['shuttles']);
+    }
+    expect(await props({ shuttles: Array(7).fill(ok) })).toEqual(['shuttles']);
+    expect(await validate(plainToInstance(RsvpDTO, { status: 'attending', shuttle: 'x'.repeat(25) }))).toHaveLength(1);
   });
 });

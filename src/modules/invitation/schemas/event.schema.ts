@@ -28,6 +28,7 @@ export class Event {
   gifts?: Gift[];
   program?: ProgramItem[];
   story?: StoryItem[];
+  shuttles?: Shuttle[];
   budget?: number;
   expenses?: Expense[];
   checklist?: Task[];
@@ -56,6 +57,15 @@ export class StoryItem {
   when?: string;
   title: string;
   text?: string;
+}
+
+/** A bus for guests (xe đưa đón): where from, when it leaves (Vietnam time), how many seats. */
+export class Shuttle {
+  _id?: unknown;
+  label: string;
+  time: string;
+  from?: string;
+  seats: number;
 }
 
 /** A line of the host's budget (VND). */
@@ -104,6 +114,14 @@ const StoryItemSchema = new Schema({
   title: { type: String, required: true },
   text: { type: String },
 }, { _id: false });
+
+// Guests point at a bus by its _id (rsvp.shuttle), so it keeps one
+const ShuttleSchema = new Schema({
+  label: { type: String, required: true },
+  time: { type: String, required: true },
+  from: { type: String },
+  seats: { type: Number, required: true },
+});
 
 const ExpenseSchema = new Schema({
   label: { type: String, required: true },
@@ -181,6 +199,7 @@ export const EventSchema = new Schema({
   // In time order; unset when the host gave none
   program: { type: [ProgramItemSchema], default: undefined },
   story: { type: [StoryItemSchema], default: undefined },
+  shuttles: { type: [ShuttleSchema], default: undefined },
   // The host's budget (thu chi): a planned total and each expense. Only the
   // host's own view of the event asks for the expenses.
   budget: { type: Number },

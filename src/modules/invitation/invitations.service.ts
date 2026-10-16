@@ -17,6 +17,7 @@ import { UpdateGuestDTO } from './dtos/updateGuest.dto';
 import { GiftDTO } from './dtos/gift.dto';
 import { ProgramItemDTO } from './dtos/program.dto';
 import { StoryItemDTO } from './dtos/story.dto';
+import { ShuttleDTO } from './dtos/shuttle.dto';
 import { ExpenseDTO, UpdateExpenseDTO } from './dtos/expense.dto';
 import { TaskDTO, UpdateTaskDTO } from './dtos/task.dto';
 import { DuplicateEventDTO } from './dtos/duplicate.dto';
@@ -35,19 +36,19 @@ const templateStr = fs.readFileSync(path.resolve(process.cwd(), 'src/templates/s
 const template = Handlebars.compile(templateStr);
 
 // Fields of an event that guests may see (no host id, no counters).
-const PUBLIC_EVENT_FIELDS = '_id title location mapLocation startAt rsvpBy type theme groomName brideName message messageEn allowPublicLink music scratchDate gifts photos program story';
+const PUBLIC_EVENT_FIELDS = '_id title location mapLocation startAt rsvpBy type theme groomName brideName message messageEn allowPublicLink music scratchDate gifts photos program story shuttles';
 // Fields of a guest the host sees.
 const HOST_GUEST_FIELDS = '_id name mail viewed source rsvp sentAt remindedAt dayOfAt thankedAt group table arrivedAt arrivedCount arrivedBySelf gift giftClaim lang';
 // Fields of a guest the reception desk sees: who is expected, who came.
 const DESK_GUEST_FIELDS = '_id name group table source rsvp.status rsvp.count rsvp.vegetarian arrivedAt arrivedCount arrivedBySelf';
 // What a copy of an event takes from it (for another ceremony of the same wedding)
 const DUPLICATED_FIELDS = 'title location mapLocation startAt type theme groomName brideName message messageEn allowPublicLink '
-  + 'music scratchDate seatsPerTable gifts program story photos';
+  + 'music scratchDate seatsPerTable gifts program story shuttles photos';
 // Fields the host can set, picked explicitly from request bodies.
 const EDITABLE_FIELDS = [
   'title', 'location', 'mapLocation', 'startAt', 'type', 'theme',
   'groomName', 'brideName', 'message', 'messageEn', 'allowPublicLink', 'music', 'scratchDate', 'gifts', 'seatsPerTable', 'rsvpBy',
-  'program', 'story', 'budget',
+  'program', 'story', 'shuttles', 'budget',
 ] as const;
 
 function pickEditable(body: CreateInvitationDTO | UpdateInvitationDTO) {
@@ -65,6 +66,10 @@ function pickEditable(body: CreateInvitationDTO | UpdateInvitationDTO) {
     } else if (key === 'story') {
       if (Array.isArray(value)) {
         out.story = tidyStory(value as StoryItemDTO[]);
+      }
+    } else if (key === 'shuttles') {
+      if (Array.isArray(value)) {
+        out.shuttles = tidyShuttles(value as ShuttleDTO[]);
       }
     } else if (value !== undefined) {
       out[key] = typeof value === 'string' ? value.trim() : value;
@@ -92,6 +97,31 @@ export function tidyStory(items: StoryItemDTO[]) {
     }))
     .filter(item => item.title)
     .map(({ when, title, text }) => ({ ...(when ? { when } : {}), title, ...(text ? { text } : {}) }));
+}
+
+/**
+ * The buses in the host's order, text on one line. A bus keeps its _id (the
+ * guests on it stay on it); a new one, or a repeated id, gets a new one.
+ */
+export function tidyShuttles(items: ShuttleDTO[]) {
+  const line = (value?: string) => value?.replace(/\s+/g, ' ').trim() || undefined;
+  const seen = new Set<string>();
+  return items
+    .map(item => {
+      const keep = item._id && mongoose.isValidObjectId(item._id) && !seen.has(item._id);
+      if (keep) {
+        seen.add(item._id);
+      }
+      const from = line(item.from);
+      return {
+        _id: keep ? new mongoose.Types.ObjectId(item._id) : new mongoose.Types.ObjectId(),
+        label: line(item.label) ?? '',
+        time: item.time,
+        ...(from ? { from } : {}),
+        seats: item.seats,
+      };
+    })
+    .filter(item => item.label);
 }
 
 /**
@@ -263,7 +293,7 @@ export class InvitationsService {
     const { host, cohosts, isDeleted, guestPhotos, ...publicEvent } = event.toJSON();
     return {
       ...guest.toJSON(),
-      event: { ...publicEvent, guestPhotos: shownGuestPhotos(guestPhotos, guest._id) },
+      event: await this.withSeatsTaken({ ...publicEvent, guestPhotos: shownGuestPhotos(guestPhotos, guest._id) }),
       wishes: await this.visibleWishes(event._id),
     };
   }
@@ -283,7 +313,10 @@ export class InvitationsService {
       await this.eventModel.updateOne({ _id: eventId }, { $inc: { publicViews: 1 } }, { timestamps: false });
     }
     const { host, cohosts, guestPhotos, ...publicEvent } = event.toJSON();
-    return { event: { ...publicEvent, guestPhotos: shownGuestPhotos(guestPhotos) }, wishes: await this.visibleWishes(eventId) };
+    return {
+      event: await this.withSeatsTaken({ ...publicEvent, guestPhotos: shownGuestPhotos(guestPhotos) }),
+      wishes: await this.visibleWishes(eventId),
+    };
   }
 
   /**
@@ -386,6 +419,14 @@ export class InvitationsService {
     if (!event) {
       throw new NotFoundException();
     }
+    if (Array.isArray(body.shuttles)) {
+      // Guests on a bus that was taken off come on their own
+      const kept = ((event as any).shuttles ?? []).map(s => String(s._id));
+      await this.guestModel.updateMany(
+        { event: event._id, 'rsvp.shuttle': { $exists: true, $nin: kept } },
+        { $unset: { 'rsvp.shuttle': 1 } },
+      );
+    }
     if (body.addGuests?.length) {
       const guestList = await this.insertGuests(event._id, body.addGuests);
       this.mailGuests(guestList, slEmail);
@@ -427,7 +468,7 @@ export class InvitationsService {
     if (opts.publicOnly) {
       filter.allowPublicLink = true;
     }
-    const event = await this.eventModel.findOne(filter).select('_id startAt');
+    const event = await this.eventModel.findOne(filter).select('_id startAt shuttles');
     if (!event) {
       throw new NotFoundException();
     }
@@ -447,9 +488,10 @@ export class InvitationsService {
     if (!guest) {
       throw new NotFoundException();
     }
-    this.assertNotOver(await this.liveEvent((guest as any).event));
+    const event = await this.liveEvent((guest as any).event);
+    this.assertNotOver(event);
 
-    const rsvp = toRsvp(body);
+    const rsvp = toRsvp(body, await this.pickShuttle(event, body, guest._id));
     await this.guestModel.updateOne({ _id: guestId }, { $set: { rsvp } });
     return { guestId, rsvp };
   }
@@ -464,8 +506,9 @@ export class InvitationsService {
     if (!name) {
       throw new BadRequestException('Vui lòng nhập tên của bạn');
     }
-    this.assertNotOver(await this.liveEvent(eventId, { publicOnly: true }));
-    const rsvp = toRsvp(body);
+    const event = await this.liveEvent(eventId, { publicOnly: true });
+    this.assertNotOver(event);
+    const rsvp = toRsvp(body, await this.pickShuttle(event, body));
     const guest = await this.guestModel.create({
       event: eventId,
       name,
@@ -473,6 +516,53 @@ export class InvitationsService {
       rsvp,
     });
     return { guestId: guest._id, rsvp };
+  }
+
+  /**
+   * The bus a guest takes: only someone coming, on one of the event's buses,
+   * with a seat for each of them (counting everyone else on it).
+   */
+  private async pickShuttle(event: any, body: RsvpDTO, guestId?: unknown) {
+    if (!body.shuttle || body.status !== 'attending') {
+      return undefined;
+    }
+    const shuttle = (event.shuttles ?? []).find(s => String(s._id) === body.shuttle);
+    if (!shuttle) {
+      throw new BadRequestException('Chuyến xe này không còn, bạn chọn lại nhé');
+    }
+    const taken = (await this.shuttleSeats(event._id, guestId)).get(body.shuttle) ?? 0;
+    const left = Math.max(shuttle.seats - taken, 0);
+    if ((body.count ?? 1) > left) {
+      throw new BadRequestException(left ? `${shuttle.label} chỉ còn ${left} chỗ` : `${shuttle.label} đã kín chỗ`);
+    }
+    return body.shuttle;
+  }
+
+  /** Seats taken on each bus of an event: everyone coming on it, but `exceptGuest`. */
+  private async shuttleSeats(eventId: unknown, exceptGuest?: unknown) {
+    const match: Record<string, unknown> = {
+      event: new mongoose.Types.ObjectId(String(eventId)),
+      isDeleted: { $ne: true },
+      'rsvp.status': 'attending',
+      'rsvp.shuttle': { $exists: true },
+    };
+    if (exceptGuest) {
+      match._id = { $ne: new mongoose.Types.ObjectId(String(exceptGuest)) };
+    }
+    const rows = await this.guestModel.aggregate([
+      { $match: match },
+      { $group: { _id: '$rsvp.shuttle', seats: { $sum: '$rsvp.count' } } },
+    ]);
+    return new Map<string, number>(rows.map(row => [String(row._id), row.seats]));
+  }
+
+  /** The event for a card: each bus says how many seats are taken. */
+  private async withSeatsTaken(event: any) {
+    if (!event.shuttles?.length) {
+      return event;
+    }
+    const taken = await this.shuttleSeats(event._id);
+    return { ...event, shuttles: event.shuttles.map(s => ({ ...s, taken: taken.get(String(s._id)) ?? 0 })) };
   }
 
   /**
@@ -1423,7 +1513,7 @@ export function formatViDate(date: Date) {
   return `${hh}:${mm} ${days[vn.getUTCDay()]}, ${vn.getUTCDate()}/${vn.getUTCMonth() + 1}/${vn.getUTCFullYear()}`;
 }
 
-function toRsvp(body: RsvpDTO) {
+function toRsvp(body: RsvpDTO, shuttle?: string) {
   // Someone not coming brings nobody.
   const count = body.status === 'declined' ? 0 : (body.count ?? 1);
   const vegetarian = Math.min(body.vegetarian ?? 0, count);
@@ -1434,6 +1524,7 @@ function toRsvp(body: RsvpDTO) {
     count,
     ...(vegetarian > 0 ? { vegetarian } : {}),
     ...(song ? { song } : {}),
+    ...(shuttle ? { shuttle } : {}),
     note: body.note?.trim() ?? '',
     respondedAt: new Date(),
   };
