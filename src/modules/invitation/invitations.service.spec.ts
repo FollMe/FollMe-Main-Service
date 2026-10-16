@@ -488,6 +488,9 @@ describe('reception desk', () => {
     const fields = guestModel.find.mock.results[0].value.select.mock.calls[0][0];
     expect(fields).toContain('arrivedAt');
     expect(fields).not.toMatch(/mail|note|viewed|\brsvp\b(?!\.)/);
+    // Each guest's bus and the buses: a whole bus is checked in at once
+    expect(fields).toContain('rsvp.shuttle');
+    expect(eventModel.findOne.mock.results[0].value.select.mock.calls[0][0]).toContain('shuttles');
     expect(res.guests).toHaveLength(1);
   });
 
