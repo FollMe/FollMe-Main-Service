@@ -28,6 +28,9 @@ export const MAX_SONG = 100;
 export const SEAT_FINDER_BEFORE_MS = 6 * 3600_000;
 export const SEAT_FINDER_AFTER_MS = 12 * 3600_000;
 export const SEAT_FINDER_RESULTS = 5;
+// "Mình đã đến": a guest checks themselves in on their card, around the party
+export const SELF_CHECKIN_BEFORE_MS = 3 * 3600_000;
+export const SELF_CHECKIN_AFTER_MS = 8 * 3600_000;
 // The program of the day: "17:00 Đón khách", "18:00 Khai tiệc"...
 export const MAX_PROGRAM_ITEMS = 8;
 export const MAX_PROGRAM_LABEL = 60;

@@ -532,7 +532,7 @@ describe('reception desk', () => {
   it('undoes a check-in', async () => {
     const { service, guestModel } = deskSetup();
     await service.setArrival(EVENT, KEY, GUEST, { arrived: false });
-    expect(guestModel.findOneAndUpdate.mock.calls[0][1]).toEqual({ $unset: { arrivedAt: 1, arrivedCount: 1 } });
+    expect(guestModel.findOneAndUpdate.mock.calls[0][1]).toEqual({ $unset: { arrivedAt: 1, arrivedCount: 1, arrivedBySelf: 1 } });
   });
 
   it('404s for a guest of another event', async () => {
@@ -1359,5 +1359,43 @@ describe('photos guests took at the party', () => {
     expect(eventModel.updateOne.mock.calls[1][1]).toEqual({ $unset: { 'guestPhotos.$.hidden': 1 } });
     eventModel.findOneAndUpdate = jest.fn(() => query(null));
     await expect(service.removeGuestPhoto(GUEST, PHOTO)).rejects.toBeInstanceOf(NotFoundException);
+  });
+});
+
+describe('a guest checks themselves in', () => {
+  const start = new Date('2026-12-12T04:00:00Z');
+  const at = (hours: number) => start.getTime() + hours * 3600_000;
+  const make = (rsvp: any = { status: 'attending', count: 3 }) => {
+    const ctx = setup({ event: { _id: EVENT, startAt: start } as any });
+    ctx.guestModel.findOne = jest.fn(() => query({ _id: GUEST, event: EVENT, rsvp }));
+    ctx.guestModel.findOneAndUpdate = jest.fn(() => query({ _id: GUEST, arrivedAt: new Date(at(0)), arrivedCount: 3, table: '5' }));
+    return ctx;
+  };
+
+  it('on the day, with the count they answered, keeping the desk\'s check-in if first', async () => {
+    const { service, guestModel } = make();
+    expect(await service.arriveSelf(GUEST, {}, at(0))).toMatchObject({ arrivedCount: 3, table: '5' });
+    const [filter, update] = guestModel.findOneAndUpdate.mock.calls[0];
+    expect(filter).toEqual({ _id: GUEST, isDeleted: { $ne: true } });
+    expect(update[0].$set.arrivedAt.$ifNull[0]).toBe('$arrivedAt');
+    expect(update[0].$set.arrivedCount).toEqual({ $ifNull: ['$arrivedCount', 3] });
+    expect(update[0].$set.arrivedBySelf.$cond[2]).toBe(true);
+    await service.arriveSelf(GUEST, { count: 2 }, at(1));
+    expect(guestModel.findOneAndUpdate.mock.calls[1][1][0].$set.arrivedCount).toEqual({ $ifNull: ['$arrivedCount', 2] });
+  });
+
+  it('not the day before, nor the day after', async () => {
+    const { service, guestModel } = make();
+    await expect(service.arriveSelf(GUEST, {}, at(-4))).rejects.toBeInstanceOf(BadRequestException);
+    await expect(service.arriveSelf(GUEST, {}, at(9))).rejects.toBeInstanceOf(BadRequestException);
+    expect(guestModel.findOneAndUpdate).not.toHaveBeenCalled();
+    await service.arriveSelf(GUEST, {}, at(-2));
+    expect(guestModel.findOneAndUpdate).toHaveBeenCalledTimes(1);
+  });
+
+  it('one person when they never answered', async () => {
+    const { service, guestModel } = make(null);
+    await service.arriveSelf(GUEST, {}, at(0));
+    expect(guestModel.findOneAndUpdate.mock.calls[0][1][0].$set.arrivedCount).toEqual({ $ifNull: ['$arrivedCount', 1] });
   });
 });

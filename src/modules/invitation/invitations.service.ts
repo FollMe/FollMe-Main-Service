@@ -21,12 +21,13 @@ import { TaskDTO, UpdateTaskDTO } from './dtos/task.dto';
 import { DuplicateEventDTO } from './dtos/duplicate.dto';
 import { PublicRsvpDTO, RsvpDTO } from './dtos/rsvp.dto';
 import { WishDTO } from './dtos/wish.dto';
-import { ArrivalDTO, WalkInDTO } from './dtos/desk.dto';
+import { ArrivalDTO, SelfArrivalDTO, WalkInDTO } from './dtos/desk.dto';
 import { GiftClaimDTO, GiftGiverDTO, ReceivedGiftDTO } from './dtos/receivedGift.dto';
 import { SeatDTO } from './dtos/seating.dto';
 import {
   GUEST_PHOTOS_AFTER_MS, GUEST_PHOTOS_BEFORE_MS, MAX_COHOSTS, MAX_EXPENSES, MAX_GUEST_PHOTOS, MAX_GUEST_PHOTOS_EACH,
-  MAX_PHOTOS, MAX_TASKS, MAX_WISHES_SHOWN, SEAT_FINDER_AFTER_MS, SEAT_FINDER_BEFORE_MS, SEAT_FINDER_RESULTS, TASK_LINKS,
+  MAX_PHOTOS, MAX_TASKS, MAX_WISHES_SHOWN, SEAT_FINDER_AFTER_MS, SEAT_FINDER_BEFORE_MS, SEAT_FINDER_RESULTS,
+  SELF_CHECKIN_AFTER_MS, SELF_CHECKIN_BEFORE_MS, TASK_LINKS,
 } from './invitation.constants';
 
 const templateStr = fs.readFileSync(path.resolve(process.cwd(), 'src/templates/sendInvitation.template.hbs')).toString('utf8')
@@ -35,9 +36,9 @@ const template = Handlebars.compile(templateStr);
 // Fields of an event that guests may see (no host id, no counters).
 const PUBLIC_EVENT_FIELDS = '_id title location mapLocation startAt rsvpBy type theme groomName brideName message allowPublicLink music scratchDate gifts photos program';
 // Fields of a guest the host sees.
-const HOST_GUEST_FIELDS = '_id name mail viewed source rsvp sentAt remindedAt dayOfAt thankedAt group table arrivedAt arrivedCount gift giftClaim';
+const HOST_GUEST_FIELDS = '_id name mail viewed source rsvp sentAt remindedAt dayOfAt thankedAt group table arrivedAt arrivedCount arrivedBySelf gift giftClaim';
 // Fields of a guest the reception desk sees: who is expected, who came.
-const DESK_GUEST_FIELDS = '_id name group table source rsvp.status rsvp.count rsvp.vegetarian arrivedAt arrivedCount';
+const DESK_GUEST_FIELDS = '_id name group table source rsvp.status rsvp.count rsvp.vegetarian arrivedAt arrivedCount arrivedBySelf';
 // What a copy of an event takes from it (for another ceremony of the same wedding)
 const DUPLICATED_FIELDS = 'title location mapLocation startAt type theme groomName brideName message allowPublicLink '
   + 'music scratchDate seatsPerTable gifts program photos';
@@ -229,7 +230,7 @@ export class InvitationsService {
 
     // Their table too: the card shows it on the day
     const guest: any = await this.guestModel.findOne({ isDeleted: { $ne: true }, _id: guestId })
-      .select('_id name event rsvp table giftClaim')
+      .select('_id name event rsvp table giftClaim arrivedAt arrivedCount')
       .populate('event', `${PUBLIC_EVENT_FIELDS} host cohosts isDeleted +guestPhotos`);
     const event = guest?.event;
     if (!guest || !event || event.isDeleted) {
@@ -1262,7 +1263,7 @@ export class InvitationsService {
           ...seat,
         },
       }]
-      : { $unset: { arrivedAt: 1, arrivedCount: 1 } };
+      : { $unset: { arrivedAt: 1, arrivedCount: 1, arrivedBySelf: 1 } };
     const guest = await this.guestModel.findOneAndUpdate(
       { _id: guestId, event: eventId, isDeleted: { $ne: true } },
       update as any,
@@ -1272,6 +1273,40 @@ export class InvitationsService {
       throw new NotFoundException();
     }
     return guest;
+  }
+
+  /**
+   * "Mình đã đến": a guest checks themselves in on their card at the door,
+   * from 3 hours before the party to 8 hours after. The desk's own check-in
+   * stands if it came first. Answers with their table.
+   */
+  async arriveSelf(guestId: string, body: SelfArrivalDTO, now = Date.now()) {
+    assertObjectId(guestId);
+    const found: any = await this.guestModel.findOne({ _id: guestId, isDeleted: { $ne: true } }).select('_id event rsvp');
+    if (!found) {
+      throw new NotFoundException();
+    }
+    const event = await this.liveEvent(found.event);
+    const start = new Date(event.startAt).getTime();
+    if (now < start - SELF_CHECKIN_BEFORE_MS || now > start + SELF_CHECKIN_AFTER_MS) {
+      throw new BadRequestException('Chỉ báo đã đến được trong ngày tiệc');
+    }
+    const count = body.count ?? (found.rsvp?.status === 'declined' ? 1 : found.rsvp?.count || 1);
+    const guest: any = await this.guestModel.findOneAndUpdate(
+      { _id: guestId, isDeleted: { $ne: true } },
+      [{
+        $set: {
+          arrivedBySelf: { $cond: [{ $ifNull: ['$arrivedAt', false] }, '$arrivedBySelf', true] },
+          arrivedAt: { $ifNull: ['$arrivedAt', new Date(now)] },
+          arrivedCount: { $ifNull: ['$arrivedCount', count] },
+        },
+      }] as any,
+      { new: true },
+    ).select('_id arrivedAt arrivedCount table');
+    if (!guest) {
+      throw new NotFoundException();
+    }
+    return { _id: guest._id, arrivedAt: guest.arrivedAt, arrivedCount: guest.arrivedCount, table: guest.table ?? null };
   }
 
   /** Someone not on the list came: added as a guest, already checked in. */

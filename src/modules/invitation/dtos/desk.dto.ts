@@ -43,3 +43,12 @@ export class WalkInDTO {
   @MaxLength(MAX_TABLE_NAME, { message: `Tên bàn tối đa ${MAX_TABLE_NAME} ký tự` })
   table?: string;
 }
+
+/** A guest checks themselves in on their card: how many came with them. */
+export class SelfArrivalDTO {
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Max(MAX_RSVP_COUNT)
+  count?: number;
+}
