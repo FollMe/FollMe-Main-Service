@@ -16,12 +16,13 @@ import { GuestDTO } from './dtos/guest.dto';
 import { UpdateGuestDTO } from './dtos/updateGuest.dto';
 import { GiftDTO } from './dtos/gift.dto';
 import { ProgramItemDTO } from './dtos/program.dto';
+import { ExpenseDTO, UpdateExpenseDTO } from './dtos/expense.dto';
 import { PublicRsvpDTO, RsvpDTO } from './dtos/rsvp.dto';
 import { WishDTO } from './dtos/wish.dto';
 import { ArrivalDTO, WalkInDTO } from './dtos/desk.dto';
 import { GiftGiverDTO, ReceivedGiftDTO } from './dtos/receivedGift.dto';
 import { SeatDTO } from './dtos/seating.dto';
-import { MAX_PHOTOS, MAX_WISHES_SHOWN } from './invitation.constants';
+import { MAX_EXPENSES, MAX_PHOTOS, MAX_WISHES_SHOWN } from './invitation.constants';
 
 const templateStr = fs.readFileSync(path.resolve(process.cwd(), 'src/templates/sendInvitation.template.hbs')).toString('utf8')
 const template = Handlebars.compile(templateStr);
@@ -36,7 +37,7 @@ const DESK_GUEST_FIELDS = '_id name group table source rsvp.status rsvp.count ar
 const EDITABLE_FIELDS = [
   'title', 'location', 'mapLocation', 'startAt', 'type', 'theme',
   'groomName', 'brideName', 'message', 'allowPublicLink', 'music', 'scratchDate', 'gifts', 'seatsPerTable', 'rsvpBy',
-  'program',
+  'program', 'budget',
 ] as const;
 
 function pickEditable(body: CreateInvitationDTO | UpdateInvitationDTO) {
@@ -64,6 +65,21 @@ export function tidyProgram(items: ProgramItemDTO[]) {
     .map(item => ({ time: item.time, label: item.label.replace(/\s+/g, ' ').trim() }))
     .filter(item => item.label)
     .sort((a, b) => a.time.localeCompare(b.time));
+}
+
+/**
+ * The known fields of a budget line, text on one line. A blank note and a
+ * null amount come out undefined (to clear them on update).
+ */
+export function tidyExpense(body: Partial<ExpenseDTO> | UpdateExpenseDTO) {
+  const text = (value?: string | null) => value?.replace(/\s+/g, ' ').trim() || undefined;
+  return {
+    label: text(body.label),
+    category: body.category ?? undefined,
+    amount: body.amount ?? undefined,
+    paid: body.paid ?? undefined,
+    note: text(body.note),
+  };
 }
 
 /** Only the known fields of a gift account, account name as banks print it. */
@@ -132,7 +148,7 @@ export class InvitationsService {
     assertObjectId(eventId);
 
     const invitation = await this.eventModel.findOne({ isDeleted: { $ne: true }, host: userId, _id: eventId })
-      .select('-isDeleted -host')
+      .select('-isDeleted -host +expenses')
       .populate('guests', HOST_GUEST_FIELDS);
 
     if (!invitation) {
@@ -621,6 +637,77 @@ export class InvitationsService {
     this.cloudinaryService.destroy(publicId).catch(err => {
       console.error(`Could not delete photo ${publicId} from Cloudinary`, err);
     });
+  }
+
+  // ---------- Budget (thu chi) ----------
+
+  /** Adds a line to the host's budget. */
+  async addExpense(eventId: string, userId: string, body: ExpenseDTO) {
+    assertObjectId(eventId);
+    const expense = { _id: new mongoose.Types.ObjectId(), ...tidyExpense(body) };
+    if (!expense.label) {
+      throw new BadRequestException('Vui lòng nhập khoản chi');
+    }
+    const res = await this.eventModel.updateOne(
+      { _id: eventId, host: userId, isDeleted: { $ne: true }, [`expenses.${MAX_EXPENSES - 1}`]: { $exists: false } },
+      { $push: { expenses: { ...expense, createdAt: new Date(), updatedAt: new Date() } } },
+    );
+    if (!res.modifiedCount) {
+      // Not theirs, or the list is full
+      await this.hostEvent(eventId, userId, '_id');
+      throw new BadRequestException(`Tối đa ${MAX_EXPENSES} khoản chi`);
+    }
+    return expense;
+  }
+
+  /** Changes the given fields of a line; null clears the cost, the paid amount or the note. */
+  async updateExpense(eventId: string, expenseId: string, userId: string, body: UpdateExpenseDTO) {
+    assertObjectId(eventId);
+    assertObjectId(expenseId);
+    const $set: Record<string, unknown> = {};
+    const $unset: Record<string, ''> = {};
+    const tidy = tidyExpense(body);
+    for (const key of ['label', 'category', 'amount', 'paid', 'note'] as const) {
+      if (body[key] === undefined) {
+        continue;
+      }
+      if (tidy[key] === undefined && (key === 'label' || key === 'category')) {
+        // A line always says what it is for
+        throw new BadRequestException(key === 'label' ? 'Vui lòng nhập khoản chi' : 'Nhóm chi không hợp lệ');
+      }
+      if (tidy[key] === undefined) {
+        $unset[`expenses.$.${key}`] = '';
+      } else {
+        $set[`expenses.$.${key}`] = tidy[key];
+      }
+    }
+    if (!Object.keys($set).length && !Object.keys($unset).length) {
+      throw new BadRequestException('Không có gì để cập nhật');
+    }
+    $set['expenses.$.updatedAt'] = new Date();
+    const event: any = await this.eventModel.findOneAndUpdate(
+      { _id: eventId, host: userId, isDeleted: { $ne: true }, 'expenses._id': expenseId },
+      { $set, ...(Object.keys($unset).length ? { $unset } : {}) },
+      { new: true },
+    ).select({ expenses: { $elemMatch: { _id: expenseId } } });
+    const expense = event?.expenses?.[0];
+    if (!expense) {
+      throw new NotFoundException();
+    }
+    return expense;
+  }
+
+  async removeExpense(eventId: string, expenseId: string, userId: string) {
+    assertObjectId(eventId);
+    assertObjectId(expenseId);
+    const res = await this.eventModel.updateOne(
+      { _id: eventId, host: userId, isDeleted: { $ne: true }, 'expenses._id': expenseId },
+      { $pull: { expenses: { _id: expenseId } } },
+    );
+    if (!res.modifiedCount) {
+      throw new NotFoundException();
+    }
+    return { _id: expenseId };
   }
 
   // ---------- Venue screen ----------

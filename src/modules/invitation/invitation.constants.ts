@@ -23,3 +23,10 @@ export const MAX_PROGRAM_LABEL = 60;
 // Deleted events, guests and wishes are kept this long (to undo a mistake
 // on request), then MongoDB removes them for good.
 export const PURGE_AFTER_SECONDS = 30 * 24 * 60 * 60;
+// The budget (thu chi): what the host spends, next to the gift ledger
+export const EXPENSE_CATEGORIES = [
+  'venue', 'photo', 'attire', 'rings', 'ceremony', 'decor', 'cards', 'music', 'travel', 'honeymoon', 'other',
+] as const;
+export const MAX_EXPENSES = 100;
+export const MAX_EXPENSE_LABEL = 60;
+export const MAX_EXPENSE_NOTE = 100;

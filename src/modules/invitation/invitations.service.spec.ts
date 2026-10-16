@@ -1,7 +1,7 @@
 import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { plainToInstance } from 'class-transformer';
 import { validate } from 'class-validator';
-import { InvitationsService, ogImage, summarize, tidyProgram } from './invitations.service';
+import { InvitationsService, ogImage, summarize, tidyExpense, tidyProgram } from './invitations.service';
 import { PublicRsvpDTO } from './dtos/rsvp.dto';
 import { CreateInvitationDTO } from './dtos/createInvitation.dto';
 import { UpdateInvitationDTO } from './dtos/updateInvitation.dto';
@@ -10,6 +10,7 @@ import { UpdateGuestDTO } from './dtos/updateGuest.dto';
 import { ArrivalDTO, WalkInDTO } from './dtos/desk.dto';
 import { GiftGiverDTO } from './dtos/receivedGift.dto';
 import { SeatingDTO } from './dtos/seating.dto';
+import { ExpenseDTO, UpdateExpenseDTO } from './dtos/expense.dto';
 
 jest.mock('src/sharedServices/mailer.service', () => ({ MailerService: class {} }));
 
@@ -624,6 +625,88 @@ describe('program', () => {
     expect(await props([{ time: '18:00', label: 'x'.repeat(61) }])).toEqual(['program']);
     expect(await props(Array.from({ length: 9 }, () => ({ time: '18:00', label: 'x' })))).toEqual(['program']);
     expect(await props('18:00 Khai tiệc')).toEqual(['program']);
+  });
+});
+
+describe('budget', () => {
+  const EXPENSE = '64b0000000000000000000c1';
+
+  it('adds a tidied line, unless the list is full or the event not theirs', async () => {
+    const { service, eventModel } = setup();
+    const added: any = await service.addExpense(EVENT, HOST, { label: ' Tiệc   cưới ', category: 'venue', amount: 150000000, note: ' ', extra: 1 } as any);
+    expect(added).toMatchObject({ label: 'Tiệc cưới', category: 'venue', amount: 150000000 });
+    expect(added.note).toBeUndefined();
+    expect(added.extra).toBeUndefined();
+    const [filter, update] = eventModel.updateOne.mock.calls[0];
+    expect(filter).toMatchObject({ _id: EVENT, host: HOST, 'expenses.99': { $exists: false } });
+    expect(update.$push.expenses).toMatchObject({ label: 'Tiệc cưới', category: 'venue' });
+
+    eventModel.updateOne = jest.fn(async () => ({ matchedCount: 0, modifiedCount: 0 }));
+    await expect(service.addExpense(EVENT, HOST, { label: 'Nhẫn', category: 'rings' } as any)).rejects.toBeInstanceOf(BadRequestException);
+    eventModel.findOne = jest.fn(() => query(null));
+    await expect(service.addExpense(EVENT, 'someone', { label: 'Nhẫn', category: 'rings' } as any)).rejects.toBeInstanceOf(NotFoundException);
+    await expect(service.addExpense(EVENT, HOST, { label: '   ', category: 'rings' } as any)).rejects.toBeInstanceOf(BadRequestException);
+  });
+
+  it('changes only the given fields; null clears the cost', async () => {
+    const { service, eventModel } = setup();
+    eventModel.findOneAndUpdate = jest.fn(() => query({ expenses: [{ _id: EXPENSE, label: 'Ảnh cưới', paid: 5000000 }] }));
+    const saved = await service.updateExpense(EVENT, EXPENSE, HOST, { paid: 5000000, amount: null, note: '' });
+    expect(saved).toMatchObject({ _id: EXPENSE, paid: 5000000 });
+    const [filter, update] = eventModel.findOneAndUpdate.mock.calls[0];
+    expect(filter).toMatchObject({ _id: EVENT, host: HOST, 'expenses._id': EXPENSE });
+    expect(update.$set).toMatchObject({ 'expenses.$.paid': 5000000 });
+    expect(update.$unset).toEqual({ 'expenses.$.amount': '', 'expenses.$.note': '' });
+    expect(update.$set['expenses.$.label']).toBeUndefined();
+  });
+
+  it('never clears what a line is for, and 404s for another event', async () => {
+    const { service, eventModel } = setup();
+    await expect(service.updateExpense(EVENT, EXPENSE, HOST, { label: ' ' })).rejects.toBeInstanceOf(BadRequestException);
+    await expect(service.updateExpense(EVENT, EXPENSE, HOST, { category: null } as any)).rejects.toBeInstanceOf(BadRequestException);
+    await expect(service.updateExpense(EVENT, EXPENSE, HOST, {})).rejects.toBeInstanceOf(BadRequestException);
+    eventModel.findOneAndUpdate = jest.fn(() => query(null));
+    await expect(service.updateExpense(EVENT, EXPENSE, 'someone', { paid: 1 })).rejects.toBeInstanceOf(NotFoundException);
+  });
+
+  it('removes a line of the host\'s event only', async () => {
+    const { service, eventModel } = setup();
+    await service.removeExpense(EVENT, EXPENSE, HOST);
+    expect(eventModel.updateOne.mock.calls[0][1]).toEqual({ $pull: { expenses: { _id: EXPENSE } } });
+    eventModel.updateOne = jest.fn(async () => ({ matchedCount: 0, modifiedCount: 0 }));
+    await expect(service.removeExpense(EVENT, EXPENSE, 'someone')).rejects.toBeInstanceOf(NotFoundException);
+  });
+
+  it('keeps the planned total among the editable fields', async () => {
+    const { service, saved, eventModel } = setup();
+    await service.createOne({ title: 'A', location: 'B', budget: 300000000, guests: [] } as any, HOST, 'h@x');
+    expect(saved[0].budget).toBe(300000000);
+    await service.update(EVENT, HOST, { budget: null } as any, 'h@x');
+    expect(eventModel.findOneAndUpdate.mock.calls[0][1].$set).toEqual({ budget: null });
+  });
+
+  it('only the host view asks for the expenses', async () => {
+    const { service, eventModel, guestModel, wishModel } = setup();
+    eventModel.findOne = jest.fn(() => query(null));
+    await service.findOne(EVENT, HOST).catch(() => null);
+    expect(eventModel.findOne.mock.results[0].value.select.mock.calls[0][0]).toContain('+expenses');
+    guestModel.findOne = jest.fn(() => query(null));
+    await service.findGuest(GUEST).catch(() => null);
+    expect(guestModel.findOne.mock.results[0].value.populate.mock.calls[0][1]).not.toContain('expenses');
+    expect(wishModel).toBeDefined();
+  });
+
+  it('validates lines', async () => {
+    const props = async body => (await validate(plainToInstance(ExpenseDTO, body))).map(e => e.property);
+    expect(await props({ label: 'Tiệc', category: 'venue', amount: 1, paid: 0 })).toEqual([]);
+    expect(await props({ label: '', category: 'venue' })).toEqual(['label']);
+    expect(await props({ label: 'x'.repeat(61), category: 'venue' })).toEqual(['label']);
+    expect(await props({ label: 'Tiệc', category: 'food' })).toEqual(['category']);
+    expect(await props({ label: 'Tiệc', category: 'venue', amount: -1, paid: 1.5 })).toEqual(['amount', 'paid']);
+    const update = async body => (await validate(plainToInstance(UpdateExpenseDTO, body))).map(e => e.property);
+    expect(await update({ amount: null, paid: null, note: null })).toEqual([]);
+    expect(await update({ note: 'x'.repeat(101) })).toEqual(['note']);
+    expect(tidyExpense({ label: ' a  b ', note: '  ' })).toEqual({ label: 'a b', category: undefined, amount: undefined, paid: undefined, note: undefined });
   });
 });
 
