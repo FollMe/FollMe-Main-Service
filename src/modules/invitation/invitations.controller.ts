@@ -13,7 +13,7 @@ import { WishDTO } from './dtos/wish.dto';
 import { PhotoOrderDTO } from './dtos/photo.dto';
 import { UpdateGuestDTO } from './dtos/updateGuest.dto';
 import { ArrivalDTO, WalkInDTO } from './dtos/desk.dto';
-import { GiftGiverDTO } from './dtos/receivedGift.dto';
+import { GiftClaimDTO, GiftGiverDTO } from './dtos/receivedGift.dto';
 import { SeatingDTO } from './dtos/seating.dto';
 import { ExpenseDTO, UpdateExpenseDTO } from './dtos/expense.dto';
 import { ChecklistDTO, UpdateTaskDTO } from './dtos/task.dto';
@@ -283,6 +283,17 @@ export class invitationsController {
   @Put('invitations/:id/rsvp')
   async rsvp(@Param('id') id: string, @Body() body: RsvpDTO) {
     return await this.invitationsService.rsvpGuest(id, body);
+  }
+
+  /** "I sent a gift" by bank transfer, from the guest's card; DELETE takes it back. */
+  @Put('invitations/:id/gift')
+  async claimGift(@Param('id') id: string, @Body() body: GiftClaimDTO) {
+    return await this.invitationsService.claimGift(id, body);
+  }
+
+  @Delete('invitations/:id/gift')
+  async withdrawGiftClaim(@Param('id') id: string) {
+    return await this.invitationsService.withdrawGiftClaim(id);
   }
 
   @Post('invitations/:id/wishes')

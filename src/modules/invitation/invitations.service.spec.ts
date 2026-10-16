@@ -8,7 +8,7 @@ import { UpdateInvitationDTO } from './dtos/updateInvitation.dto';
 import { PhotoOrderDTO } from './dtos/photo.dto';
 import { UpdateGuestDTO } from './dtos/updateGuest.dto';
 import { ArrivalDTO, WalkInDTO } from './dtos/desk.dto';
-import { GiftGiverDTO } from './dtos/receivedGift.dto';
+import { GiftClaimDTO, GiftGiverDTO } from './dtos/receivedGift.dto';
 import { SeatingDTO } from './dtos/seating.dto';
 import { ExpenseDTO, UpdateExpenseDTO } from './dtos/expense.dto';
 import { ChecklistDTO, UpdateTaskDTO } from './dtos/task.dto';
@@ -1084,6 +1084,24 @@ describe('guests', () => {
     await service.updateGuest(EVENT, GUEST, HOST, { thanked: false });
     expect(guestModel.findOneAndUpdate.mock.calls[1][1]).toEqual({ $unset: { thankedAt: 1 } });
     expect(await validate(plainToInstance(UpdateGuestDTO, { thanked: 'yes' }))).toHaveLength(1);
+  });
+
+  it('a guest says they sent a gift, the host ledger is left alone', async () => {
+    const { service, guestModel } = setup();
+    const res = await service.claimGift(GUEST, { amount: 500000, side: 'bride' });
+    const [filter, update] = guestModel.updateOne.mock.calls[0];
+    expect(filter).toEqual({ _id: GUEST });
+    expect(update.$set.giftClaim).toMatchObject({ amount: 500000, side: 'bride' });
+    expect(update.$set.gift).toBeUndefined();
+    expect(res.giftClaim.at).toBeInstanceOf(Date);
+    await service.claimGift(GUEST, {});
+    expect(guestModel.updateOne.mock.calls[1][1].$set.giftClaim).toEqual({ at: expect.any(Date) });
+    await service.withdrawGiftClaim(GUEST);
+    expect(guestModel.updateOne.mock.calls[2][1]).toEqual({ $unset: { giftClaim: 1 } });
+    const bad = async body => (await validate(plainToInstance(GiftClaimDTO, body))).map(e => e.property).sort();
+    expect(await bad({ amount: -1, side: 'aunt' })).toEqual(['amount', 'side']);
+    expect(await bad({ amount: 1.5 })).toEqual(['amount']);
+    expect(await bad({})).toEqual([]);
   });
 
   it('marks and unmarks the message for the day', async () => {
