@@ -4,6 +4,7 @@ import { PURGE_AFTER_SECONDS, RSVP_STATUSES } from '../invitation.constants';
 export class Rsvp {
   status: string;
   count: number;
+  vegetarian?: number;
   note: string;
   respondedAt: Date;
 }
@@ -40,6 +41,8 @@ export class Guest {
 const RsvpSchema = new Schema({
   status: { type: String, enum: RSVP_STATUSES, required: true },
   count: { type: Number, default: 1 },
+  // Of them, how many eat vegetarian (suất chay); unset when none
+  vegetarian: { type: Number },
   note: { type: String, default: '' },
   respondedAt: { type: Date },
 }, { _id: false });

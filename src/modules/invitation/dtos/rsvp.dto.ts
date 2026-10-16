@@ -12,6 +12,13 @@ export class RsvpDTO {
   @Max(MAX_RSVP_COUNT)
   count?: number;
 
+  /** How many of them eat vegetarian (suất chay); never more than come. */
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  @Max(MAX_RSVP_COUNT)
+  vegetarian?: number;
+
   @IsOptional()
   @MaxLength(300)
   note?: string;
