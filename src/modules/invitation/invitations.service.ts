@@ -18,6 +18,7 @@ import { GiftDTO } from './dtos/gift.dto';
 import { ProgramItemDTO } from './dtos/program.dto';
 import { ExpenseDTO, UpdateExpenseDTO } from './dtos/expense.dto';
 import { TaskDTO, UpdateTaskDTO } from './dtos/task.dto';
+import { DuplicateEventDTO } from './dtos/duplicate.dto';
 import { PublicRsvpDTO, RsvpDTO } from './dtos/rsvp.dto';
 import { WishDTO } from './dtos/wish.dto';
 import { ArrivalDTO, WalkInDTO } from './dtos/desk.dto';
@@ -34,6 +35,9 @@ const PUBLIC_EVENT_FIELDS = '_id title location mapLocation startAt rsvpBy type 
 const HOST_GUEST_FIELDS = '_id name mail viewed source rsvp sentAt remindedAt thankedAt group table arrivedAt arrivedCount gift';
 // Fields of a guest the reception desk sees: who is expected, who came.
 const DESK_GUEST_FIELDS = '_id name group table source rsvp.status rsvp.count arrivedAt arrivedCount';
+// What a copy of an event takes from it (for another ceremony of the same wedding)
+const DUPLICATED_FIELDS = 'title location mapLocation startAt type theme groomName brideName message allowPublicLink '
+  + 'music scratchDate seatsPerTable gifts program photos';
 // Fields the host can set, picked explicitly from request bodies.
 const EDITABLE_FIELDS = [
   'title', 'location', 'mapLocation', 'startAt', 'type', 'theme',
@@ -643,10 +647,66 @@ export class InvitationsService {
     return { order };
   }
 
+  /**
+   * Deletes a photo's file, unless another event still shows it (copies of
+   * an event share their photos). Callers take it off their event first.
+   */
   private destroyPhoto(publicId: string) {
-    this.cloudinaryService.destroy(publicId).catch(err => {
-      console.error(`Could not delete photo ${publicId} from Cloudinary`, err);
-    });
+    Promise.resolve(this.eventModel.exists({ 'photos.publicId': publicId }))
+      .then(shared => (shared ? null : this.cloudinaryService.destroy(publicId)))
+      .catch(err => {
+        console.error(`Could not delete photo ${publicId} from Cloudinary`, err);
+      });
+  }
+
+  // ---------- Copies of an event ----------
+
+  /**
+   * A new event like this one, for another ceremony of the same wedding
+   * (lễ vu quy, tiệc báo hỷ): its look, names, message, program, gift
+   * accounts and photos, with its own title, time and place if given, and
+   * the invited guests if asked (to send their own links; nobody is mailed).
+   * Answers, links, the ledger, the budget and the checklist stay behind.
+   */
+  async duplicate(eventId: string, userId: string, body: DuplicateEventDTO) {
+    const found = await this.hostEvent(eventId, userId, DUPLICATED_FIELDS);
+    const source = typeof found.toObject === 'function' ? found.toObject() : found;
+    const copy: Record<string, unknown> = { host: userId };
+    for (const field of DUPLICATED_FIELDS.split(' ')) {
+      if (source[field] !== undefined) {
+        copy[field] = source[field];
+      }
+    }
+    // The same files, as photos of their own
+    copy.photos = source.photos?.length
+      ? source.photos.map(p => ({ url: p.url, publicId: p.publicId, width: p.width, height: p.height }))
+      : undefined;
+    if (body.title?.trim()) {
+      copy.title = body.title.trim();
+    }
+    if (body.startAt) {
+      copy.startAt = body.startAt;
+    }
+    if (body.location?.trim() && body.location.trim() !== source.location) {
+      copy.location = body.location.trim();
+      // The old map link would lead to the other place
+      copy.mapLocation = body.mapLocation?.trim() ?? '';
+    }
+    const event = await new this.eventModel(copy).save();
+
+    let guests = 0;
+    if (body.copyGuests) {
+      const invited = await this.guestModel.find({
+        event: eventId, isDeleted: { $ne: true }, $or: [{ source: 'host' }, { source: { $exists: false } }],
+      }).sort({ _id: 1 }).select('name mail group');
+      if (invited.length) {
+        await this.guestModel.insertMany(invited.map((g: any) => ({
+          event: event._id, name: g.name, mail: g.mail, group: g.group, source: 'host',
+        })));
+      }
+      guests = invited.length;
+    }
+    return { _id: event._id, guests };
   }
 
   // ---------- Budget (thu chi) ----------
