@@ -12,12 +12,16 @@ import { GiftGiverDTO } from './dtos/receivedGift.dto';
 import { SeatingDTO } from './dtos/seating.dto';
 import { ExpenseDTO, UpdateExpenseDTO } from './dtos/expense.dto';
 import { ChecklistDTO, UpdateTaskDTO } from './dtos/task.dto';
+import { DuplicateEventDTO } from './dtos/duplicate.dto';
 
 jest.mock('src/sharedServices/mailer.service', () => ({ MailerService: class {} }));
 
 const HOST = '64b000000000000000000001';
 const EVENT = '64b0000000000000000000e1';
 const GUEST = '64b0000000000000000000a1';
+
+/** Lets fire-and-forget work (deleting photo files) run. */
+const flush = () => new Promise(resolve => setImmediate(resolve));
 
 /** A thenable Mongoose query: chain methods return itself. */
 function query(result: any) {
@@ -42,6 +46,8 @@ function setup({ event = { _id: EVENT, startAt: new Date(Date.now() + 86400000) 
   eventModel.findOne = jest.fn(() => query(event));
   eventModel.findOneAndUpdate = jest.fn(() => query(event));
   eventModel.updateOne = jest.fn(async () => ({ matchedCount: 1, modifiedCount: 1 }));
+  // No other event shows a photo, unless a test says so
+  eventModel.exists = jest.fn(async () => null);
   const guestModel: any = {
     findOne: jest.fn(() => query(guest)),
     findOneAndUpdate: jest.fn(() => query(guest)),
@@ -304,6 +310,7 @@ describe('photos', () => {
     const { service, eventModel, cloudinary } = setup({ event: { _id: EVENT, photos: [] } as any });
     eventModel.updateOne.mockResolvedValueOnce({ matchedCount: 0, modifiedCount: 0 });
     await expect(service.addPhoto(EVENT, HOST, file)).rejects.toBeInstanceOf(BadRequestException);
+    await flush();
     expect(cloudinary.destroy).toHaveBeenCalledWith('FollMe/events/e1/a');
   });
 
@@ -321,6 +328,7 @@ describe('photos', () => {
       expect.objectContaining({ host: HOST, 'photos._id': PHOTO_A }),
       { $pull: { photos: { _id: PHOTO_A } } },
     );
+    await flush();
     expect(cloudinary.destroy).toHaveBeenCalledWith('FollMe/events/e1/a');
   });
 
@@ -713,6 +721,72 @@ describe('budget', () => {
   });
 });
 
+describe('copies of an event', () => {
+  const source = {
+    _id: EVENT, title: 'Lễ thành hôn', location: 'Nhà trai, Huế', mapLocation: 'https://maps.app/x', startAt: new Date('2027-01-16T04:00:00Z'),
+    type: 'wedding', theme: 'garden', groomName: 'Minh', brideName: 'Lan', message: 'Mời bạn', allowPublicLink: true,
+    music: 'canon', scratchDate: true, seatsPerTable: 12, gifts: [{ side: 'groom', bankBin: '970436', accountNumber: '0011', accountName: 'MINH' }],
+    program: [{ time: '11:00', label: 'Đón khách' }],
+    photos: [{ _id: 'p1', url: 'https://res.cloudinary.com/x/a.jpg', publicId: 'FollMe/events/e1/a', width: 800, height: 1000 }],
+    publicViews: 40, rsvpBy: new Date('2027-01-09T16:59:59Z'), screenKey: 'k',
+  };
+
+  it('copies the look and the photos, with its own title, time and place', async () => {
+    const { service, saved, eventModel } = setup({ event: source as any });
+    const res = await service.duplicate(EVENT, HOST, {
+      title: ' Lễ vu quy ', startAt: '2027-01-15T02:00:00.000Z', location: 'Nhà gái, Huế',
+    });
+    expect(res).toEqual({ _id: EVENT, guests: 0 });
+    expect(eventModel.findOne.mock.calls[0][0]).toMatchObject({ _id: EVENT, host: HOST });
+    const copy = saved[0];
+    expect(copy).toMatchObject({
+      host: HOST, title: 'Lễ vu quy', startAt: '2027-01-15T02:00:00.000Z', location: 'Nhà gái, Huế', mapLocation: '',
+      theme: 'garden', groomName: 'Minh', seatsPerTable: 12, program: source.program, gifts: source.gifts,
+    });
+    expect(copy.photos).toEqual([{ url: source.photos[0].url, publicId: 'FollMe/events/e1/a', width: 800, height: 1000 }]);
+    for (const field of ['publicViews', 'rsvpBy', 'screenKey', 'isDeleted', '_id']) {
+      expect(copy[field]).toBeUndefined();
+    }
+  });
+
+  it('keeps everything as it is when nothing is given, the map link too', async () => {
+    const { service, saved } = setup({ event: source as any });
+    await service.duplicate(EVENT, HOST, { location: 'Nhà trai, Huế' });
+    expect(saved[0]).toMatchObject({ title: 'Lễ thành hôn', location: 'Nhà trai, Huế', mapLocation: 'https://maps.app/x' });
+  });
+
+  it('invites the same guests, not walk-ins, answers or the ledger, and mails nobody', async () => {
+    const { service, guestModel, mailer } = setup({ event: source as any });
+    guestModel.find = jest.fn(() => query([{ name: 'Cô Ba', mail: 'ba@x.vn', group: 'Nhà gái' }, { name: 'Chú Tư' }]));
+    const res = await service.duplicate(EVENT, HOST, { copyGuests: true });
+    expect(res.guests).toBe(2);
+    expect(guestModel.find.mock.calls[0][0]).toMatchObject({ event: EVENT, $or: [{ source: 'host' }, { source: { $exists: false } }] });
+    expect(guestModel.insertMany.mock.calls[0][0]).toEqual([
+      { event: EVENT, name: 'Cô Ba', mail: 'ba@x.vn', group: 'Nhà gái', source: 'host' },
+      { event: EVENT, name: 'Chú Tư', mail: undefined, group: undefined, source: 'host' },
+    ]);
+    expect(mailer.sendInBackground).not.toHaveBeenCalled();
+  });
+
+  it('only the host copies, and the body is checked', async () => {
+    const { service } = setup({ event: null });
+    await expect(service.duplicate(EVENT, 'someone', {})).rejects.toBeInstanceOf(NotFoundException);
+    const props = async body => (await validate(plainToInstance(DuplicateEventDTO, body))).map(e => e.property);
+    expect(await props({ title: 'Lễ vu quy', startAt: '2027-01-15T02:00:00.000Z', copyGuests: true })).toEqual([]);
+    expect(await props({ title: '', startAt: 'mai', copyGuests: 'yes' })).toEqual(['title', 'startAt', 'copyGuests']);
+  });
+
+  it('keeps a shared photo file while another event shows it', async () => {
+    const { service, eventModel, cloudinary } = setup({ event: { _id: EVENT, photos: [{ _id: 'p1', publicId: 'FollMe/events/e1/a' }] } as any });
+    eventModel.findOneAndUpdate = jest.fn(() => query({ photos: [{ _id: '64b0000000000000000000f1', publicId: 'FollMe/events/e1/a' }] }));
+    eventModel.exists = jest.fn(async () => ({ _id: 'other' }));
+    await service.removePhoto(EVENT, '64b0000000000000000000f1', HOST);
+    await flush();
+    expect(eventModel.exists).toHaveBeenCalledWith({ 'photos.publicId': 'FollMe/events/e1/a' });
+    expect(cloudinary.destroy).not.toHaveBeenCalled();
+  });
+});
+
 describe('checklist', () => {
   const TASK = '64b0000000000000000000d1';
 
@@ -945,6 +1019,7 @@ describe('remove', () => {
     // Guests and wishes are purged with it
     expect(guestModel.updateMany).toHaveBeenCalledWith({ event: EVENT, deletedAt: { $exists: false } }, { $set: { deletedAt } });
     expect(wishModel.updateMany).toHaveBeenCalledWith({ event: EVENT }, { $set: { deletedAt } });
+    await flush();
     expect(cloudinary.destroy.mock.calls.map(c => c[0])).toEqual(['FollMe/events/e1/a', 'FollMe/events/e1/b']);
   });
 

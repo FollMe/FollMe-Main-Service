@@ -17,6 +17,7 @@ import { GiftGiverDTO } from './dtos/receivedGift.dto';
 import { SeatingDTO } from './dtos/seating.dto';
 import { ExpenseDTO, UpdateExpenseDTO } from './dtos/expense.dto';
 import { ChecklistDTO, UpdateTaskDTO } from './dtos/task.dto';
+import { DuplicateEventDTO } from './dtos/duplicate.dto';
 import { MAX_PHOTO_BYTES } from './invitation.constants';
 
 const photoPipe = new ParseFilePipe({
@@ -148,6 +149,13 @@ export class invitationsController {
   @UseGuards(AuthGuard("jwt"))
   async removeExpense(@Request() req, @Param('id') id: string, @Param('expenseId') expenseId: string) {
     return await this.invitationsService.removeExpense(id, expenseId, req.user._id);
+  }
+
+  /** A copy of the event for another ceremony (lễ vu quy, tiệc báo hỷ). */
+  @Post('events/:id/duplicate')
+  @UseGuards(AuthGuard("jwt"))
+  async duplicate(@Request() req, @Param('id') id: string, @Body() body: DuplicateEventDTO) {
+    return await this.invitationsService.duplicate(id, req.user._id, body);
   }
 
   // ---------- Checklist (việc cần làm) ----------
