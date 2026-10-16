@@ -6,7 +6,7 @@ import { ProgramItemDTO } from "./program.dto";
 import { StoryItemDTO } from "./story.dto";
 import { ShuttleDTO } from "./shuttle.dto";
 import { NoteDTO } from "./note.dto";
-import { EVENT_MUSIC, EVENT_THEMES, EVENT_TYPES, MAX_GIFT_ACCOUNTS, MAX_GIFT_AMOUNT, MAX_GUESTS_PER_REQUEST, MAX_PROGRAM_ITEMS, MAX_NOTES, MAX_SEATS_PER_TABLE, MAX_SHUTTLES, MAX_STORY_ITEMS } from "../invitation.constants";
+import { EVENT_MUSIC, EVENT_THEMES, EVENT_TYPES, MAX_GIFT_ACCOUNTS, MAX_GIFT_AMOUNT, MAX_GUESTS_PER_REQUEST, MAX_PROGRAM_ITEMS, MAX_MENU_ITEM, MAX_MENU_ITEMS, MAX_NOTES, MAX_SEATS_PER_TABLE, MAX_SHUTTLES, MAX_STORY_ITEMS } from "../invitation.constants";
 
 export class CreateInvitationDTO {
   @IsNotEmpty()
@@ -122,6 +122,14 @@ export class CreateInvitationDTO {
   @ValidateNested({ each: true })
   @Type(() => NoteDTO)
   notes?: NoteDTO[];
+
+  /** The dishes, in serving order; an empty list removes the menu. */
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(MAX_MENU_ITEMS, { message: `Thực đơn tối đa ${MAX_MENU_ITEMS} món` })
+  @IsString({ each: true })
+  @MaxLength(MAX_MENU_ITEM, { each: true, message: `Tên món tối đa ${MAX_MENU_ITEM} ký tự` })
+  menu?: string[];
 
   @IsOptional()
   @IsArray()

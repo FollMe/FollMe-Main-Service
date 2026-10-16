@@ -52,6 +52,10 @@ export const MAX_NOTES = 6;
 export const MAX_NOTE_TITLE = 60;
 export const MAX_NOTE_TEXT = 300;
 
+// The party's menu (thực đơn): dishes in serving order
+export const MAX_MENU_ITEMS = 15;
+export const MAX_MENU_ITEM = 80;
+
 // A short link for the shared card (/c/minh-lan): 3 to 40 of a-z, 0-9 and
 // single hyphens, not at either end
 export const SLUG_RE = /^[a-z0-9]+(-[a-z0-9]+)*$/;
