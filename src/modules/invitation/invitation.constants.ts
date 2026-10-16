@@ -34,6 +34,11 @@ export const SELF_CHECKIN_AFTER_MS = 8 * 3600_000;
 // The program of the day: "17:00 Đón khách", "18:00 Khai tiệc"...
 export const MAX_PROGRAM_ITEMS = 8;
 export const MAX_PROGRAM_LABEL = 60;
+// "Chuyện tình yêu": a few moments of the couple's story on the invitation
+export const MAX_STORY_ITEMS = 8;
+export const MAX_STORY_WHEN = 30;
+export const MAX_STORY_TITLE = 60;
+export const MAX_STORY_TEXT = 300;
 // Deleted events, guests and wishes are kept this long (to undo a mistake
 // on request), then MongoDB removes them for good.
 export const PURGE_AFTER_SECONDS = 30 * 24 * 60 * 60;

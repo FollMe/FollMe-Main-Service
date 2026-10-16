@@ -3,7 +3,8 @@ import { IsNotEmpty, IsArray, ArrayMaxSize, IsOptional, IsDateString, IsIn, MaxL
 import { GuestDTO } from "./guest.dto";
 import { GiftDTO } from "./gift.dto";
 import { ProgramItemDTO } from "./program.dto";
-import { EVENT_MUSIC, EVENT_THEMES, EVENT_TYPES, MAX_GIFT_ACCOUNTS, MAX_GIFT_AMOUNT, MAX_GUESTS_PER_REQUEST, MAX_PROGRAM_ITEMS, MAX_SEATS_PER_TABLE } from "../invitation.constants";
+import { StoryItemDTO } from "./story.dto";
+import { EVENT_MUSIC, EVENT_THEMES, EVENT_TYPES, MAX_GIFT_ACCOUNTS, MAX_GIFT_AMOUNT, MAX_GUESTS_PER_REQUEST, MAX_PROGRAM_ITEMS, MAX_SEATS_PER_TABLE, MAX_STORY_ITEMS } from "../invitation.constants";
 
 export class CreateInvitationDTO {
   @IsNotEmpty()
@@ -89,6 +90,14 @@ export class CreateInvitationDTO {
   @ValidateNested({ each: true })
   @Type(() => ProgramItemDTO)
   program?: ProgramItemDTO[];
+
+  /** The couple's story, in their order; an empty list removes it. */
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(MAX_STORY_ITEMS)
+  @ValidateNested({ each: true })
+  @Type(() => StoryItemDTO)
+  story?: StoryItemDTO[];
 
   @IsOptional()
   @IsArray()

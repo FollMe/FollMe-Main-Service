@@ -26,6 +26,7 @@ export class Event {
   rsvpBy?: Date;
   gifts?: Gift[];
   program?: ProgramItem[];
+  story?: StoryItem[];
   budget?: number;
   expenses?: Expense[];
   checklist?: Task[];
@@ -48,6 +49,12 @@ export class Photo {
 export class ProgramItem {
   time: string;
   label: string;
+}
+
+export class StoryItem {
+  when?: string;
+  title: string;
+  text?: string;
 }
 
 /** A line of the host's budget (VND). */
@@ -88,6 +95,13 @@ const GiftSchema = new Schema({
 const ProgramItemSchema = new Schema({
   time: { type: String, required: true },
   label: { type: String, required: true },
+}, { _id: false });
+
+// A moment of the couple's story ("Mùa thu 2019", "Lần đầu gặp nhau", a few lines)
+const StoryItemSchema = new Schema({
+  when: { type: String },
+  title: { type: String, required: true },
+  text: { type: String },
 }, { _id: false });
 
 const ExpenseSchema = new Schema({
@@ -163,6 +177,7 @@ export const EventSchema = new Schema({
   gifts: { type: [GiftSchema], default: undefined },
   // In time order; unset when the host gave none
   program: { type: [ProgramItemSchema], default: undefined },
+  story: { type: [StoryItemSchema], default: undefined },
   // The host's budget (thu chi): a planned total and each expense. Only the
   // host's own view of the event asks for the expenses.
   budget: { type: Number },

@@ -16,6 +16,7 @@ import { GuestDTO } from './dtos/guest.dto';
 import { UpdateGuestDTO } from './dtos/updateGuest.dto';
 import { GiftDTO } from './dtos/gift.dto';
 import { ProgramItemDTO } from './dtos/program.dto';
+import { StoryItemDTO } from './dtos/story.dto';
 import { ExpenseDTO, UpdateExpenseDTO } from './dtos/expense.dto';
 import { TaskDTO, UpdateTaskDTO } from './dtos/task.dto';
 import { DuplicateEventDTO } from './dtos/duplicate.dto';
@@ -34,19 +35,19 @@ const templateStr = fs.readFileSync(path.resolve(process.cwd(), 'src/templates/s
 const template = Handlebars.compile(templateStr);
 
 // Fields of an event that guests may see (no host id, no counters).
-const PUBLIC_EVENT_FIELDS = '_id title location mapLocation startAt rsvpBy type theme groomName brideName message allowPublicLink music scratchDate gifts photos program';
+const PUBLIC_EVENT_FIELDS = '_id title location mapLocation startAt rsvpBy type theme groomName brideName message allowPublicLink music scratchDate gifts photos program story';
 // Fields of a guest the host sees.
 const HOST_GUEST_FIELDS = '_id name mail viewed source rsvp sentAt remindedAt dayOfAt thankedAt group table arrivedAt arrivedCount arrivedBySelf gift giftClaim';
 // Fields of a guest the reception desk sees: who is expected, who came.
 const DESK_GUEST_FIELDS = '_id name group table source rsvp.status rsvp.count rsvp.vegetarian arrivedAt arrivedCount arrivedBySelf';
 // What a copy of an event takes from it (for another ceremony of the same wedding)
 const DUPLICATED_FIELDS = 'title location mapLocation startAt type theme groomName brideName message allowPublicLink '
-  + 'music scratchDate seatsPerTable gifts program photos';
+  + 'music scratchDate seatsPerTable gifts program story photos';
 // Fields the host can set, picked explicitly from request bodies.
 const EDITABLE_FIELDS = [
   'title', 'location', 'mapLocation', 'startAt', 'type', 'theme',
   'groomName', 'brideName', 'message', 'allowPublicLink', 'music', 'scratchDate', 'gifts', 'seatsPerTable', 'rsvpBy',
-  'program', 'budget',
+  'program', 'story', 'budget',
 ] as const;
 
 function pickEditable(body: CreateInvitationDTO | UpdateInvitationDTO) {
@@ -61,6 +62,10 @@ function pickEditable(body: CreateInvitationDTO | UpdateInvitationDTO) {
       if (Array.isArray(value)) {
         out.program = tidyProgram(value as ProgramItemDTO[]);
       }
+    } else if (key === 'story') {
+      if (Array.isArray(value)) {
+        out.story = tidyStory(value as StoryItemDTO[]);
+      }
     } else if (value !== undefined) {
       out[key] = typeof value === 'string' ? value.trim() : value;
     }
@@ -74,6 +79,19 @@ export function tidyProgram(items: ProgramItemDTO[]) {
     .map(item => ({ time: item.time, label: item.label.replace(/\s+/g, ' ').trim() }))
     .filter(item => item.label)
     .sort((a, b) => a.time.localeCompare(b.time));
+}
+
+/** The couple's story in their order: one-line when and title, text without runs of blank lines. */
+export function tidyStory(items: StoryItemDTO[]) {
+  const line = (value?: string) => value?.replace(/\s+/g, ' ').trim() || undefined;
+  return items
+    .map(item => ({
+      when: line(item.when),
+      title: line(item.title) ?? '',
+      text: item.text?.replace(/[ \t]+/g, ' ').replace(/\n{3,}/g, '\n\n').trim() || undefined,
+    }))
+    .filter(item => item.title)
+    .map(({ when, title, text }) => ({ ...(when ? { when } : {}), title, ...(text ? { text } : {}) }));
 }
 
 /**
