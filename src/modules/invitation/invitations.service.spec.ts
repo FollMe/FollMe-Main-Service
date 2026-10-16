@@ -1232,7 +1232,7 @@ describe('finding a seat on the shared link', () => {
   it('finds by the start of each word, exact name first, name and table only', async () => {
     const { service, eventModel } = make();
     const res = await service.findSeat(EVENT, 'co ba', at(1));
-    expect(res).toEqual({ open: true, matches: [{ name: 'Cô Ba', table: '5' }] });
+    expect(res).toEqual({ open: true, hasTables: true, matches: [{ name: 'Cô Ba', table: '5' }] });
     expect(eventModel.findOne.mock.calls[0][0]).toMatchObject({ _id: EVENT, allowPublicLink: true });
     expect((await service.findSeat(EVENT, 'ba', at(1))).matches.map(m => m.name)).toEqual(['Bác Ba Thành', 'Cô Ba']);
     expect((await service.findSeat(EVENT, 'duc', at(1))).matches).toEqual([{ name: 'Anh Đức', table: null }]);
@@ -1245,9 +1245,13 @@ describe('finding a seat on the shared link', () => {
     expect(await service.findSeat(EVENT, 'co ba', at(13))).toEqual({ open: false, matches: [] });
   });
 
-  it('needs at least two letters', async () => {
+  it('needs at least two letters; without them says whether there is a seating plan', async () => {
     const { service, guestModel } = make();
-    expect(await service.findSeat(EVENT, ' c ', at(1))).toEqual({ open: true, matches: [] });
+    guestModel.exists = jest.fn(async () => ({ _id: GUEST }));
+    expect(await service.findSeat(EVENT, ' c ', at(1))).toEqual({ open: true, hasTables: true, matches: [] });
+    expect(guestModel.exists.mock.calls[0][0]).toMatchObject({ event: EVENT, table: { $nin: [null, ''] } });
     expect(guestModel.find).not.toHaveBeenCalled();
+    guestModel.exists = jest.fn(async () => null);
+    expect((await service.findSeat(EVENT, '', at(1))).hasTables).toBe(false);
   });
 });

@@ -486,7 +486,9 @@ export class InvitationsService {
     }
     const words = foldName(String(query ?? '').slice(0, 60)).split(' ').filter(Boolean);
     if (words.join('').length < 2) {
-      return { open: true, matches: [] };
+      // The card asks first whether there is a seating plan at all
+      const hasTables = Boolean(await this.guestModel.exists({ event: eventId, isDeleted: { $ne: true }, table: { $nin: [null, ''] } }));
+      return { open: true, hasTables, matches: [] };
     }
     const guests: any[] = await this.guestModel.find({ event: eventId, isDeleted: { $ne: true } }).select('name table');
     const wanted = words.join(' ');
@@ -502,7 +504,7 @@ export class InvitationsService {
         || a.name.localeCompare(b.name))
       .slice(0, SEAT_FINDER_RESULTS)
       .map(({ guest }) => ({ name: guest.name, table: guest.table || null }));
-    return { open: true, matches };
+    return { open: true, hasTables: guests.some(guest => guest.table), matches };
   }
 
   async wishFromPublic(eventId: string, body: WishDTO) {
