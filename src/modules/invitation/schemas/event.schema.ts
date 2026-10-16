@@ -19,6 +19,7 @@ export class Event {
   brideName: string;
   message: string;
   messageEn?: string;
+  slug?: string;
   allowPublicLink: boolean;
   publicViews: number;
   music?: string;
@@ -198,6 +199,8 @@ export const EventSchema = new Schema({
   message: { type: String, default: '' },
   // The message in English, for guests reading the card in English; unset when none
   messageEn: { type: String },
+  // The shared card's short link (/c/minh-lan), unique; unset when none
+  slug: { type: String },
   // One link anyone can open (e.g. shared in a Zalo group), on top of the
   // personal per-guest links. Off for events created before it existed.
   allowPublicLink: { type: Boolean, default: false },
@@ -240,6 +243,8 @@ export const EventSchema = new Schema({
 // "Thiệp của tôi": the host's events, latest first
 EventSchema.index({ host: 1, startAt: -1 });
 EventSchema.index({ cohosts: 1 });
+// One event per short link; most have none
+EventSchema.index({ slug: 1 }, { unique: true, sparse: true });
 EventSchema.index({ deletedAt: 1 }, { expireAfterSeconds: PURGE_AFTER_SECONDS });
 
 EventSchema.virtual('guests', {

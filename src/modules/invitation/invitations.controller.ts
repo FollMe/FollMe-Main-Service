@@ -10,6 +10,7 @@ import { CreateInvitationDTO } from './dtos/createInvitation.dto';
 import { UpdateInvitationDTO } from './dtos/updateInvitation.dto';
 import { PublicRsvpDTO, RsvpDTO } from './dtos/rsvp.dto';
 import { WishDTO } from './dtos/wish.dto';
+import { SlugDTO } from './dtos/slug.dto';
 import { PhotoOrderDTO } from './dtos/photo.dto';
 import { UpdateGuestDTO } from './dtos/updateGuest.dto';
 import { ArrivalDTO, SelfArrivalDTO, WalkInDTO } from './dtos/desk.dto';
@@ -149,6 +150,13 @@ export class invitationsController {
   @UseGuards(AuthGuard("jwt"))
   async removeExpense(@Request() req, @Param('id') id: string, @Param('expenseId') expenseId: string) {
     return await this.invitationsService.removeExpense(id, expenseId, req.user._id);
+  }
+
+  /** The shared card's short link (/c/minh-lan); empty removes it. */
+  @Put('events/:id/slug')
+  @UseGuards(AuthGuard("jwt"))
+  async setSlug(@Request() req, @Param('id') id: string, @Body() body: SlugDTO) {
+    return await this.invitationsService.setSlug(id, req.user._id, body.slug);
   }
 
   /** The host's link for someone to manage the event with them; `rotate` replaces it. */
@@ -343,6 +351,12 @@ export class invitationsController {
   @Get('events/:id/public')
   async getPublic(@Param('id') id: string, @Headers('authorization') authorization?: string) {
     return await this.invitationsService.findPublic(id, this.viewerId(authorization));
+  }
+
+  /** Which event a short link opens (/c/minh-lan), if its shared link is on. */
+  @Get('slugs/:slug')
+  async bySlug(@Param('slug') slug: string) {
+    return await this.invitationsService.findBySlug(slug);
   }
 
   @Get('events/:id/preview')
