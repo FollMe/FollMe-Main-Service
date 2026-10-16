@@ -30,6 +30,8 @@ export const MAX_PROGRAM_LABEL = 60;
 // on request), then MongoDB removes them for good.
 export const PURGE_AFTER_SECONDS = 30 * 24 * 60 * 60;
 // The budget (thu chi): what the host spends, next to the gift ledger
+// Who pays a line of the budget: one family, or both halves
+export const EXPENSE_PAYERS = ['groom', 'bride', 'shared'] as const;
 export const EXPENSE_CATEGORIES = [
   'venue', 'photo', 'attire', 'rings', 'ceremony', 'decor', 'cards', 'music', 'travel', 'honeymoon', 'other',
 ] as const;
