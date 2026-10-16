@@ -62,3 +62,6 @@ export const TASK_LINKS = [
 ] as const;
 // People who manage an event with its host (the other half of the couple, a parent)
 export const MAX_COHOSTS = 3;
+
+// Languages of the guest card: Vietnamese (the default, stored as nothing) or English
+export const CARD_LANGS = ['vi', 'en'];

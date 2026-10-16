@@ -1,6 +1,6 @@
 import { Type } from "class-transformer";
-import { IsBoolean, IsNotEmpty, IsOptional, IsString, MaxLength, ValidateNested } from "class-validator";
-import { MAX_GROUP_NAME, MAX_TABLE_NAME } from "../invitation.constants";
+import { IsBoolean, IsIn, IsNotEmpty, IsOptional, IsString, MaxLength, ValidateNested } from "class-validator";
+import { CARD_LANGS, MAX_GROUP_NAME, MAX_TABLE_NAME } from "../invitation.constants";
 import { ReceivedGiftDTO } from "./receivedGift.dto";
 
 /**
@@ -48,4 +48,9 @@ export class UpdateGuestDTO {
   @ValidateNested()
   @Type(() => ReceivedGiftDTO)
   gift?: ReceivedGiftDTO | null;
+
+  /** The language their card opens in. */
+  @IsOptional()
+  @IsIn(CARD_LANGS)
+  lang?: string;
 }

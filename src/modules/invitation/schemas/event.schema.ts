@@ -18,6 +18,7 @@ export class Event {
   groomName: string;
   brideName: string;
   message: string;
+  messageEn?: string;
   allowPublicLink: boolean;
   publicViews: number;
   music?: string;
@@ -162,6 +163,8 @@ export const EventSchema = new Schema({
   groomName: { type: String, default: '' },
   brideName: { type: String, default: '' },
   message: { type: String, default: '' },
+  // The message in English, for guests reading the card in English; unset when none
+  messageEn: { type: String },
   // One link anyone can open (e.g. shared in a Zalo group), on top of the
   // personal per-guest links. Off for events created before it existed.
   allowPublicLink: { type: Boolean, default: false },
