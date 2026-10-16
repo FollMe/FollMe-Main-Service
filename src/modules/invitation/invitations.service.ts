@@ -18,6 +18,7 @@ import { GiftDTO } from './dtos/gift.dto';
 import { ProgramItemDTO } from './dtos/program.dto';
 import { StoryItemDTO } from './dtos/story.dto';
 import { ShuttleDTO } from './dtos/shuttle.dto';
+import { NoteDTO } from './dtos/note.dto';
 import { ExpenseDTO, UpdateExpenseDTO } from './dtos/expense.dto';
 import { TaskDTO, UpdateTaskDTO } from './dtos/task.dto';
 import { DuplicateEventDTO } from './dtos/duplicate.dto';
@@ -36,19 +37,19 @@ const templateStr = fs.readFileSync(path.resolve(process.cwd(), 'src/templates/s
 const template = Handlebars.compile(templateStr);
 
 // Fields of an event that guests may see (no host id, no counters).
-const PUBLIC_EVENT_FIELDS = '_id title location mapLocation startAt rsvpBy type theme groomName brideName message messageEn allowPublicLink music scratchDate gifts photos program story shuttles';
+const PUBLIC_EVENT_FIELDS = '_id title location mapLocation startAt rsvpBy type theme groomName brideName message messageEn allowPublicLink music scratchDate gifts photos program story shuttles notes';
 // Fields of a guest the host sees.
 const HOST_GUEST_FIELDS = '_id name mail viewed source rsvp sentAt remindedAt dayOfAt thankedAt group table arrivedAt arrivedCount arrivedBySelf gift giftClaim lang';
 // Fields of a guest the reception desk sees: who is expected, who came.
 const DESK_GUEST_FIELDS = '_id name group table source rsvp.status rsvp.count rsvp.vegetarian arrivedAt arrivedCount arrivedBySelf';
 // What a copy of an event takes from it (for another ceremony of the same wedding)
 const DUPLICATED_FIELDS = 'title location mapLocation startAt type theme groomName brideName message messageEn allowPublicLink '
-  + 'music scratchDate seatsPerTable gifts program story shuttles photos';
+  + 'music scratchDate seatsPerTable gifts program story shuttles notes photos';
 // Fields the host can set, picked explicitly from request bodies.
 const EDITABLE_FIELDS = [
   'title', 'location', 'mapLocation', 'startAt', 'type', 'theme',
   'groomName', 'brideName', 'message', 'messageEn', 'allowPublicLink', 'music', 'scratchDate', 'gifts', 'seatsPerTable', 'rsvpBy',
-  'program', 'story', 'shuttles', 'budget',
+  'program', 'story', 'shuttles', 'notes', 'budget',
 ] as const;
 
 function pickEditable(body: CreateInvitationDTO | UpdateInvitationDTO) {
@@ -70,6 +71,10 @@ function pickEditable(body: CreateInvitationDTO | UpdateInvitationDTO) {
     } else if (key === 'shuttles') {
       if (Array.isArray(value)) {
         out.shuttles = tidyShuttles(value as ShuttleDTO[]);
+      }
+    } else if (key === 'notes') {
+      if (Array.isArray(value)) {
+        out.notes = tidyNotes(value as NoteDTO[]);
       }
     } else if (value !== undefined) {
       out[key] = typeof value === 'string' ? value.trim() : value;
@@ -97,6 +102,20 @@ export function tidyStory(items: StoryItemDTO[]) {
     }))
     .filter(item => item.title)
     .map(({ when, title, text }) => ({ ...(when ? { when } : {}), title, ...(text ? { text } : {}) }));
+}
+
+/**
+ * Notes for guests in the host's order: a known topic needs no title, the
+ * host's own ('other') does; text without runs of blank lines. Empty ones go.
+ */
+export function tidyNotes(items: NoteDTO[]) {
+  return items
+    .map(item => {
+      const title = item.kind === 'other' ? item.title?.replace(/\s+/g, ' ').trim() : undefined;
+      const text = item.text.replace(/[ \t]+/g, ' ').replace(/\n{3,}/g, '\n\n').trim();
+      return { kind: item.kind, ...(title ? { title } : {}), text };
+    })
+    .filter(note => note.text && (note.kind !== 'other' || note.title));
 }
 
 /**

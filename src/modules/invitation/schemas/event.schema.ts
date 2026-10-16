@@ -1,6 +1,6 @@
 import { Schema } from 'mongoose';
 import {
-  EVENT_MUSIC, EVENT_THEMES, EVENT_TYPES, EXPENSE_CATEGORIES, EXPENSE_PAYERS, GIFT_SIDES, PURGE_AFTER_SECONDS, TASK_LINKS,
+  EVENT_MUSIC, EVENT_THEMES, EVENT_TYPES, EXPENSE_CATEGORIES, EXPENSE_PAYERS, GIFT_SIDES, NOTE_KINDS, PURGE_AFTER_SECONDS, TASK_LINKS,
 } from '../invitation.constants';
 
 export class Event {
@@ -29,6 +29,7 @@ export class Event {
   program?: ProgramItem[];
   story?: StoryItem[];
   shuttles?: Shuttle[];
+  notes?: Note[];
   budget?: number;
   expenses?: Expense[];
   checklist?: Task[];
@@ -57,6 +58,13 @@ export class StoryItem {
   when?: string;
   title: string;
   text?: string;
+}
+
+/** A note for guests: a known topic or the host's own title ('other'), and a few lines. */
+export class Note {
+  kind: string;
+  title?: string;
+  text: string;
 }
 
 /** A bus for guests (xe đưa đón): where from, when it leaves (Vietnam time), how many seats. */
@@ -113,6 +121,13 @@ const StoryItemSchema = new Schema({
   when: { type: String },
   title: { type: String, required: true },
   text: { type: String },
+}, { _id: false });
+
+// "Lưu ý cho khách": dress code, parking, kids, a place to stay, or the host's own
+const NoteSchema = new Schema({
+  kind: { type: String, enum: NOTE_KINDS, required: true },
+  title: { type: String },
+  text: { type: String, required: true },
 }, { _id: false });
 
 // Guests point at a bus by its _id (rsvp.shuttle), so it keeps one
@@ -200,6 +215,7 @@ export const EventSchema = new Schema({
   program: { type: [ProgramItemSchema], default: undefined },
   story: { type: [StoryItemSchema], default: undefined },
   shuttles: { type: [ShuttleSchema], default: undefined },
+  notes: { type: [NoteSchema], default: undefined },
   // The host's budget (thu chi): a planned total and each expense. Only the
   // host's own view of the event asks for the expenses.
   budget: { type: Number },
