@@ -24,7 +24,7 @@ import { WishDTO } from './dtos/wish.dto';
 import { ArrivalDTO, WalkInDTO } from './dtos/desk.dto';
 import { GiftGiverDTO, ReceivedGiftDTO } from './dtos/receivedGift.dto';
 import { SeatDTO } from './dtos/seating.dto';
-import { MAX_COHOSTS, MAX_EXPENSES, MAX_PHOTOS, MAX_TASKS, MAX_WISHES_SHOWN } from './invitation.constants';
+import { MAX_COHOSTS, MAX_EXPENSES, MAX_PHOTOS, MAX_TASKS, MAX_WISHES_SHOWN, TASK_LINKS } from './invitation.constants';
 
 const templateStr = fs.readFileSync(path.resolve(process.cwd(), 'src/templates/sendInvitation.template.hbs')).toString('utf8')
 const template = Handlebars.compile(templateStr);
@@ -32,7 +32,7 @@ const template = Handlebars.compile(templateStr);
 // Fields of an event that guests may see (no host id, no counters).
 const PUBLIC_EVENT_FIELDS = '_id title location mapLocation startAt rsvpBy type theme groomName brideName message allowPublicLink music scratchDate gifts photos program';
 // Fields of a guest the host sees.
-const HOST_GUEST_FIELDS = '_id name mail viewed source rsvp sentAt remindedAt thankedAt group table arrivedAt arrivedCount gift';
+const HOST_GUEST_FIELDS = '_id name mail viewed source rsvp sentAt remindedAt dayOfAt thankedAt group table arrivedAt arrivedCount gift';
 // Fields of a guest the reception desk sees: who is expected, who came.
 const DESK_GUEST_FIELDS = '_id name group table source rsvp.status rsvp.count rsvp.vegetarian arrivedAt arrivedCount';
 // What a copy of an event takes from it (for another ceremony of the same wedding)
@@ -92,7 +92,7 @@ export function tidyTask(item: Partial<TaskDTO>) {
   return {
     label: item.label?.replace(/\s+/g, ' ').trim() ?? '',
     ...(item.due ? { due: new Date(item.due) } : {}),
-    ...(item.link ? { link: item.link } : {}),
+    ...((TASK_LINKS as readonly string[]).includes(item.link) ? { link: item.link } : {}),
   };
 }
 
@@ -453,7 +453,7 @@ export class InvitationsService {
 
   // ---------- Guests ----------
 
-  /** Renames or regroups a guest (their link shows the new name), marks it sent, reminded or thanked. */
+  /** Renames or regroups a guest (their link shows the new name), marks it sent, reminded, told about the day or thanked. */
   async updateGuest(eventId: string, guestId: string, userId: string, body: UpdateGuestDTO) {
     assertObjectId(guestId);
     await this.hostEvent(eventId, userId, '_id');
@@ -496,6 +496,11 @@ export class InvitationsService {
       set.thankedAt = new Date();
     } else if (body.thanked === false) {
       unset.thankedAt = 1;
+    }
+    if (body.dayOf === true) {
+      set.dayOfAt = new Date();
+    } else if (body.dayOf === false) {
+      unset.dayOfAt = 1;
     }
     if (body.gift !== undefined) {
       const gift = cleanGift(body.gift);

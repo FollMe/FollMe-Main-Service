@@ -33,9 +33,11 @@ export const MAX_EXPENSE_NOTE = 100;
 // The checklist (việc cần làm) before and after the day
 export const MAX_TASKS = 60;
 export const MAX_TASK_LABEL = 80;
-// The page a task leads to, if any
+// The page a task leads to, if any. One the app knows and this list does
+// not yet is dropped, keeping the task: the app may ship first.
 export const TASK_LINKS = [
   'date', 'budget', 'guests', 'send', 'remind', 'program', 'photos', 'seating', 'desk', 'screen', 'ledger', 'thanks', 'guestbook',
+  'labels', 'dayof', 'draw',
 ] as const;
 // People who manage an event with its host (the other half of the couple, a parent)
 export const MAX_COHOSTS = 3;

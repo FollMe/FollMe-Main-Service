@@ -31,6 +31,7 @@ export class Guest {
   sentAt?: Date;
   remindedAt?: Date;
   thankedAt?: Date;
+  dayOfAt?: Date;
   group?: string;
   arrivedAt?: Date;
   arrivedCount?: number;
@@ -68,6 +69,8 @@ export const GuestSchema = new Schema({
   sentAt: { type: Date },
   // When the host last sent them a reminder to answer
   remindedAt: { type: Date },
+  // When the host sent them the message for the day: time, way, their table
+  dayOfAt: { type: Date },
   // When the host sent them a thank-you after the party
   thankedAt: { type: Date },
   // Set by the host: "Nhà trai", "Nhà gái", "Bạn bè"...
