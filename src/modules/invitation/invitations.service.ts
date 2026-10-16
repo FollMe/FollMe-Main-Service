@@ -153,6 +153,11 @@ export function shownGuestPhotos(photos: any[] = [], viewerGuestId?: unknown) {
     }));
 }
 
+/** The newest guests' photos for the venue screen. */
+function screenPhotos(photos: any[] = []) {
+  return shownGuestPhotos(photos).slice(0, SCREEN_PHOTOS);
+}
+
 function assertObjectId(id: string) {
   if (!mongoose.isValidObjectId(id)) {
     throw new HttpException("Không tìm thấy tài nguyên!", HttpStatus.BAD_REQUEST);
@@ -1198,14 +1203,18 @@ export class InvitationsService {
     // overlapping polls catch it, and the screen drops repeats by id.
     const cursor = new Date(Date.now() - SCREEN_POLL_OVERLAP_MS).toISOString();
     if (!sinceDate) {
-      const event = await this.eventModel.findOne({ _id: eventId, isDeleted: { $ne: true }, screenKey: key })
-        .select(PUBLIC_EVENT_FIELDS);
+      const event: any = await this.eventModel.findOne({ _id: eventId, isDeleted: { $ne: true }, screenKey: key })
+        .select(`${PUBLIC_EVENT_FIELDS} +guestPhotos`);
       if (!event) {
         throw new NotFoundException();
       }
-      return { event, wishes: await this.visibleWishes(eventId), cursor };
+      const { guestPhotos, ...shown } = typeof event.toJSON === 'function' ? event.toJSON() : event;
+      return { event: shown, wishes: await this.visibleWishes(eventId), photos: screenPhotos(guestPhotos), cursor };
     }
-    const event = await this.eventModel.findOne({ _id: eventId, isDeleted: { $ne: true }, screenKey: key }).select('_id');
+    // Guests' photos come whole each time (a few, the newest): the screen
+    // shows the new ones and drops those the host hid
+    const event: any = await this.eventModel.findOne({ _id: eventId, isDeleted: { $ne: true }, screenKey: key })
+      .select('_id +guestPhotos');
     if (!event) {
       throw new NotFoundException();
     }
@@ -1213,7 +1222,7 @@ export class InvitationsService {
       .sort({ updatedAt: 1 })
       .limit(MAX_WISHES_SHOWN)
       .select('_id name message isHidden createdAt');
-    return { wishes, cursor };
+    return { wishes, photos: screenPhotos(event.guestPhotos), cursor };
   }
 
   // ---------- Reception desk ----------
@@ -1315,6 +1324,7 @@ export class InvitationsService {
 }
 
 const SCREEN_POLL_OVERLAP_MS = 5000;
+const SCREEN_PHOTOS = 30;
 
 /** Keys of helper links are 32 hex characters; anything else is unknown. */
 /** The events a user manages: theirs, or ones they were asked to manage with the host. */
