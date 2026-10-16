@@ -318,6 +318,12 @@ export class invitationsController {
     return await this.invitationsService.rsvpPublic(id, body);
   }
 
+  /** "Bạn ngồi bàn nào?": name and table only, on the day (?q=name). */
+  @Get('events/:id/public/seat')
+  async findSeat(@Param('id') id: string, @Query('q') q?: string) {
+    return await this.invitationsService.findSeat(id, q ?? '');
+  }
+
   @Post('events/:id/public/wishes')
   async publicWish(@Param('id') id: string, @Body() body: WishDTO) {
     return await this.invitationsService.wishFromPublic(id, body);

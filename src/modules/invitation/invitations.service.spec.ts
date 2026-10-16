@@ -1,7 +1,7 @@
 import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { plainToInstance } from 'class-transformer';
 import { validate } from 'class-validator';
-import { InvitationsService, ogImage, owned, summarize, tidyExpense, tidyProgram, tidyTask } from './invitations.service';
+import { InvitationsService, foldName, ogImage, owned, summarize, tidyExpense, tidyProgram, tidyTask } from './invitations.service';
 import { PublicRsvpDTO } from './dtos/rsvp.dto';
 import { CreateInvitationDTO } from './dtos/createInvitation.dto';
 import { UpdateInvitationDTO } from './dtos/updateInvitation.dto';
@@ -1207,5 +1207,51 @@ describe('findGuest', () => {
     const { service, guestModel } = setup({ guest: card({ isDeleted: true }) as any });
     await expect(service.findGuest(GUEST)).rejects.toBeInstanceOf(NotFoundException);
     expect(guestModel.updateOne).not.toHaveBeenCalled();
+  });
+});
+
+describe('finding a seat on the shared link', () => {
+  const start = new Date('2026-12-12T04:00:00Z');
+  const at = (hours: number) => start.getTime() + hours * 3600_000;
+  const guests = [
+    { name: 'Cô Ba', table: '5' },
+    { name: 'Bác Ba Thành', table: '2' },
+    { name: 'Anh Đức', table: '' },
+    { name: 'Chị Hà', table: 'VIP' },
+  ];
+  const make = () => {
+    const ctx = setup({ event: { _id: EVENT, startAt: start } as any });
+    ctx.guestModel.find = jest.fn(() => query(guests));
+    return ctx;
+  };
+
+  it('folds accents and case', () => {
+    expect(foldName('  Cô  Ba Đức! ')).toBe('co ba duc');
+  });
+
+  it('finds by the start of each word, exact name first, name and table only', async () => {
+    const { service, eventModel } = make();
+    const res = await service.findSeat(EVENT, 'co ba', at(1));
+    expect(res).toEqual({ open: true, hasTables: true, matches: [{ name: 'Cô Ba', table: '5' }] });
+    expect(eventModel.findOne.mock.calls[0][0]).toMatchObject({ _id: EVENT, allowPublicLink: true });
+    expect((await service.findSeat(EVENT, 'ba', at(1))).matches.map(m => m.name)).toEqual(['Bác Ba Thành', 'Cô Ba']);
+    expect((await service.findSeat(EVENT, 'duc', at(1))).matches).toEqual([{ name: 'Anh Đức', table: null }]);
+  });
+
+  it('opens 6 hours before and closes 12 hours after', async () => {
+    const { service } = make();
+    expect(await service.findSeat(EVENT, 'co ba', at(-7))).toEqual({ open: false, matches: [] });
+    expect((await service.findSeat(EVENT, 'co ba', at(-5))).open).toBe(true);
+    expect(await service.findSeat(EVENT, 'co ba', at(13))).toEqual({ open: false, matches: [] });
+  });
+
+  it('needs at least two letters; without them says whether there is a seating plan', async () => {
+    const { service, guestModel } = make();
+    guestModel.exists = jest.fn(async () => ({ _id: GUEST }));
+    expect(await service.findSeat(EVENT, ' c ', at(1))).toEqual({ open: true, hasTables: true, matches: [] });
+    expect(guestModel.exists.mock.calls[0][0]).toMatchObject({ event: EVENT, table: { $nin: [null, ''] } });
+    expect(guestModel.find).not.toHaveBeenCalled();
+    guestModel.exists = jest.fn(async () => null);
+    expect((await service.findSeat(EVENT, '', at(1))).hasTables).toBe(false);
   });
 });
