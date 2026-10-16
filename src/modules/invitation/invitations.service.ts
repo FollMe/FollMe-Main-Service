@@ -1236,10 +1236,13 @@ function toRsvp(body: RsvpDTO) {
   // Someone not coming brings nobody.
   const count = body.status === 'declined' ? 0 : (body.count ?? 1);
   const vegetarian = Math.min(body.vegetarian ?? 0, count);
+  // Only those coming pick a song for the party
+  const song = body.status === 'declined' ? '' : (body.song ?? '').replace(/\s+/g, ' ').trim();
   return {
     status: body.status,
     count,
     ...(vegetarian > 0 ? { vegetarian } : {}),
+    ...(song ? { song } : {}),
     note: body.note?.trim() ?? '',
     respondedAt: new Date(),
   };
