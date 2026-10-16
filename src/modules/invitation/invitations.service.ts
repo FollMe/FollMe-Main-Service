@@ -41,7 +41,7 @@ const PUBLIC_EVENT_FIELDS = '_id title location mapLocation startAt rsvpBy type 
 // Fields of a guest the host sees.
 const HOST_GUEST_FIELDS = '_id name mail viewed source rsvp sentAt remindedAt dayOfAt thankedAt group table arrivedAt arrivedCount arrivedBySelf gift giftClaim lang';
 // Fields of a guest the reception desk sees: who is expected, who came.
-const DESK_GUEST_FIELDS = '_id name group table source rsvp.status rsvp.count rsvp.vegetarian arrivedAt arrivedCount arrivedBySelf';
+const DESK_GUEST_FIELDS = '_id name group table source rsvp.status rsvp.count rsvp.vegetarian rsvp.shuttle arrivedAt arrivedCount arrivedBySelf';
 // What a copy of an event takes from it (for another ceremony of the same wedding)
 const DUPLICATED_FIELDS = 'title location mapLocation startAt type theme groomName brideName message messageEn allowPublicLink '
   + 'music scratchDate seatsPerTable gifts program story shuttles notes photos';
@@ -1373,7 +1373,8 @@ export class InvitationsService {
 
   /** What the reception desk shows: the event, and every guest with their answer and check-in. */
   async desk(eventId: string, key: string) {
-    const event = await this.deskEvent(eventId, key, '_id title type groomName brideName startAt location seatsPerTable program');
+    // The buses too: a whole bus is checked in at once when it pulls up
+    const event = await this.deskEvent(eventId, key, '_id title type groomName brideName startAt location seatsPerTable program shuttles');
     const guests = await this.guestModel.find({ event: eventId, isDeleted: { $ne: true } })
       .sort({ _id: 1 })
       .select(DESK_GUEST_FIELDS);
