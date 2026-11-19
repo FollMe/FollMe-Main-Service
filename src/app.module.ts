@@ -15,6 +15,7 @@ import { User, UserSchema } from './modules/auth/schemas/user.schema';
 import { AllExceptionsFilter } from './allException.filter';
 import { InvitationModule } from './modules/invitation/invitations.module';
 import { ClientErrorsModule } from './modules/clientErrors/clientErrors.module';
+import { SurprisesModule } from './modules/surprises/surprises.module';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 
@@ -28,6 +29,7 @@ import { AppService } from './app.service';
     ProfileModule,
     InvitationModule,
     ClientErrorsModule,
+    SurprisesModule,
     MongooseModule.forFeatureAsync([
       {
         name: Log.name,
